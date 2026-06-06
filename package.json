@@ -21,7 +21,7 @@
     "zustand": "^5.0.5"
   },
   "devDependencies": {
-    "@cloudflare/next-on-pages": "^1.14.1",
+    "@cloudflare/next-on-pages": "^1.13.16",
     "@tailwindcss/postcss": "^4.1.10",
     "@types/leaflet": "^1.9.17",
     "@types/node": "^24.0.3",
