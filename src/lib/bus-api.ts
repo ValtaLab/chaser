@@ -42,15 +42,20 @@ export interface BusETA {
 // ============ Route Info ============
 
 export async function getKMBRouteInfo(route: string): Promise<BusRoute[]> {
-  const res = await fetch(`${KMB_ETA_BASE}/route/${route}`);
+  // /route/{route} endpoint is broken for some routes, use route list instead
+  const res = await fetch(`${KMB_ETA_BASE}/route/`);
   const data = await res.json();
-  return data.data || [];
+  const allRoutes: BusRoute[] = data.data || [];
+  return allRoutes.filter(r => r.route.toUpperCase() === route.toUpperCase());
 }
 
 export async function getCitybusRouteInfo(route: string): Promise<BusRoute[]> {
   const res = await fetch(`${CITYBUS_ETA_BASE}/route/CTB/${route}`);
   const data = await res.json();
-  return data.data || [];
+  // Citybus returns empty object {} when no route found
+  const result = data.data;
+  if (!result || typeof result !== 'object' || Object.keys(result).length === 0) return [];
+  return Array.isArray(result) ? result : [result];
 }
 
 // ============ Stops ============
@@ -80,6 +85,20 @@ export async function getCitybusStopInfo(stopId: string): Promise<BusStop | null
   const res = await fetch(`${CITYBUS_ETA_BASE}/stop/${stopId}`);
   const data = await res.json();
   return data.data || null;
+}
+
+export async function getCitybusRouteStops(
+  route: string,
+  direction: 'I' | 'O'
+): Promise<{ stop: string; seq: number }[]> {
+  const res = await fetch(
+    `${CITYBUS_ETA_BASE}/route-stop/CTB/${route}/${direction}`
+  );
+  const data = await res.json();
+  return (data.data || []).map((s: { stop: string; seq: string }) => ({
+    stop: s.stop,
+    seq: parseInt(s.seq),
+  }));
 }
 
 // ============ ETA ============

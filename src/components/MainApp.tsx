@@ -1,10 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/stores/appStore';
+import { useAuth } from '@/lib/auth-context';
 import RouteSetup from './RouteSetup';
 import LocationTracker from './LocationTracker';
 import ETADisplay from './ETADisplay';
+import InstallPrompt from './InstallPrompt';
+import PushNotification from './PushNotification';
+import SwipeableRouteCard from './SwipeableRouteCard';
+import AuthScreen from './AuthScreen';
+import UserMenu from './UserMenu';
+import Settings from './Settings';
+import type { CommuteRoute } from '@/types';
 
 export default function MainApp() {
   const { 
@@ -14,10 +22,81 @@ export default function MainApp() {
     isTracking,
     startJourney, 
     endJourney, 
-    setActiveRoute 
+    setActiveRoute,
+    removeRoute,
+    setRoutes
   } = useAppStore();
   
-  const [currentView, setCurrentView] = useState<'home' | 'setup' | 'tracking'>('home');
+  const { user, token, isLoading, authenticatedFetch } = useAuth();
+  const [currentView, setCurrentView] = useState<'home' | 'setup' | 'tracking' | 'edit' | 'settings'>('home');
+  const [editingRoute, setEditingRoute] = useState<CommuteRoute | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [skipAuth, setSkipAuth] = useState(false);
+
+  // Check skip auth on mount
+  useEffect(() => {
+    setSkipAuth(localStorage.getItem('chaser_skip_auth') === 'true');
+  }, []);
+
+  // Sync routes from cloud
+  const syncFromCloud = useCallback(async () => {
+    if (!user || !token) return;
+    setSyncing(true);
+    try {
+      const res = await authenticatedFetch('/routes');
+      const data = await res.json();
+      if (data.routes) {
+        const cloudRoutes: CommuteRoute[] = data.routes.map((r: Record<string, unknown>) => ({
+          id: r.id as string,
+          name: r.name as string,
+          direction: r.direction as 'to_work' | 'to_home',
+          segments: r.segments as CommuteRoute['segments'],
+          createdAt: new Date(r.created_at as string),
+          updatedAt: new Date(r.updated_at as string),
+        }));
+        setRoutes(cloudRoutes);
+      }
+    } catch (e) {
+      console.error('Sync failed:', e);
+    }
+    setSyncing(false);
+  }, [user, token, authenticatedFetch, setRoutes]);
+
+  // Auto sync on login
+  useEffect(() => {
+    if (user && token) {
+      syncFromCloud();
+    }
+  }, [user, token, syncFromCloud]);
+
+  // Save route to cloud
+  const saveToCloud = useCallback(async (route: CommuteRoute) => {
+    if (!user || !token) return;
+    try {
+      await authenticatedFetch('/routes', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: route.id,
+          name: route.name,
+          direction: route.direction,
+          segments: route.segments,
+        }),
+      });
+    } catch (e) {
+      console.error('Save to cloud failed:', e);
+    }
+  }, [user, token, authenticatedFetch]);
+
+  // Delete route from cloud
+  const deleteFromCloud = useCallback(async (routeId: string) => {
+    if (!user || !token) return;
+    try {
+      await authenticatedFetch(`/routes/${routeId}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Delete from cloud failed:', e);
+    }
+  }, [user, token, authenticatedFetch]);
 
   const handleStartJourney = (routeId: string) => {
     startJourney(routeId);
@@ -28,6 +107,17 @@ export default function MainApp() {
     endJourney();
     setCurrentView('home');
   };
+
+  const handleDeleteRoute = (routeId: string) => {
+    removeRoute(routeId);
+    deleteFromCloud(routeId);
+    setDeleteConfirm(null);
+  };
+
+  // Show auth screen if not logged in and not skipping
+  if (!isLoading && !user && !skipAuth) {
+    return <AuthScreen />;
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
@@ -42,12 +132,37 @@ export default function MainApp() {
                 <p className="text-xs text-gray-400">Chaser</p>
               </div>
             </div>
-            <button
-              onClick={() => setCurrentView(currentView === 'setup' ? 'home' : 'setup')}
-              className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors"
-            >
-              {currentView === 'setup' ? '✕' : '⚙️'}
-            </button>
+            <div className="flex items-center gap-2">
+              {user && (
+                <button
+                  onClick={syncFromCloud}
+                  disabled={syncing}
+                  className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors text-sm"
+                  title="同步雲端路線"
+                >
+                  {syncing ? '🔄' : '☁️'}
+                </button>
+              )}
+              <PushNotification />
+              <InstallPrompt />
+              {user ? <UserMenu /> : (
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('chaser_skip_auth');
+                    window.location.reload();
+                  }}
+                  className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors text-sm"
+                >
+                  🔑
+                </button>
+              )}
+              <button
+                onClick={() => setCurrentView(currentView === 'settings' ? 'home' : 'settings')}
+                className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors"
+              >
+                {currentView === 'settings' ? '✕' : '⚙️'}
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -97,44 +212,47 @@ export default function MainApp() {
               ) : (
                 <div className="space-y-3">
                   {routes.map((route) => (
-                    <div
-                      key={route.id}
-                      className="bg-white/5 border border-white/10 rounded-lg p-4"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-white">{route.name}</p>
-                          <p className="text-sm text-gray-400">
-                            {route.direction === 'to_work' ? '🏢 返工' : '🏠 放工'} • 
-                            {route.segments.length} 個路段
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleStartJourney(route.id)}
-                          className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors"
-                        >
-                          開始
-                        </button>
-                      </div>
-                      
-                      {/* Route segments preview */}
-                      <div className="mt-3 flex items-center gap-2 flex-wrap">
-                        {route.segments.map((seg, index) => (
-                          <div key={seg.id} className="flex items-center gap-1">
-                            <span className="bg-white/10 text-white text-xs px-2 py-1 rounded">
-                              {seg.route.name}
-                            </span>
-                            {index < route.segments.length - 1 && (
-                              <span className="text-gray-500">→</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                    <div key={route.id}>
+                      <SwipeableRouteCard
+                        route={route}
+                        onStart={() => handleStartJourney(route.id)}
+                        onEdit={() => {
+                          setEditingRoute(route);
+                          setCurrentView('edit');
+                        }}
+                        onDelete={() => setDeleteConfirm(route.id)}
+                      />
                     </div>
                   ))}
                 </div>
               )}
             </div>
+
+            {/* Delete Confirmation Dialog */}
+            {deleteConfirm && (
+              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+                <div className="bg-slate-800 rounded-xl p-6 max-w-sm w-full border border-white/10">
+                  <h3 className="text-lg font-semibold text-white mb-2">確認刪除？</h3>
+                  <p className="text-gray-400 text-sm mb-6">
+                    刪除後無法恢復{user ? '（雲端同步刪除）' : ''}
+                  </p>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setDeleteConfirm(null)}
+                      className="flex-1 bg-white/10 hover:bg-white/20 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                    >
+                      取消
+                    </button>
+                    <button
+                      onClick={() => handleDeleteRoute(deleteConfirm)}
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
+                    >
+                      刪除
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Start Journey Button */}
             {currentJourney && (
@@ -148,7 +266,29 @@ export default function MainApp() {
           </div>
         )}
 
-        {currentView === 'setup' && <RouteSetup />}
+        {currentView === 'settings' && (
+          <Settings onClose={() => setCurrentView('home')} />
+        )}
+
+        {currentView === 'setup' && (
+          <RouteSetup
+            onDone={(route) => {
+              setCurrentView('home');
+              if (route && user) saveToCloud(route);
+            }}
+          />
+        )}
+
+        {currentView === 'edit' && editingRoute && (
+          <RouteSetup
+            editRoute={editingRoute}
+            onDone={(route) => {
+              setCurrentView('home');
+              setEditingRoute(null);
+              if (route && user) saveToCloud(route);
+            }}
+          />
+        )}
 
         {currentView === 'tracking' && (
           <div className="space-y-6">

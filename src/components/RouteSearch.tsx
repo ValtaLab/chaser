@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { getKMBRouteInfo, getKMBRouteStops, getKMBStopInfo, type BusRoute, type BusStop } from '@/lib/bus-api';
+import { getKMBRouteInfo, getKMBRouteStops, getKMBStopInfo, getCitybusRouteInfo, getCitybusRouteStops, getCitybusStopInfo, type BusRoute, type BusStop } from '@/lib/bus-api';
 import { MTR_LINES, MTR_STATIONS, type MTRLine, type MTRStation } from '@/lib/mtr-api';
 
 interface RouteSearchProps {
@@ -21,7 +21,7 @@ export interface SelectionResult {
   bound?: 'I' | 'O';
 }
 
-type SearchStep = 'transport' | 'route' | 'direction' | 'from_stop' | 'to_stop' | 'confirm';
+type SearchStep = 'transport' | 'route' | 'from_stop' | 'to_stop' | 'confirm';
 
 export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
   const [step, setStep] = useState<SearchStep>('transport');
@@ -36,6 +36,7 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
   const [fromStop, setFromStop] = useState<{ stopId: string; name: string } | null>(null);
   const [toStop, setToStop] = useState<{ stopId: string; name: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [routeDirections, setRouteDirections] = useState<Array<{ bound: 'O' | 'I'; orig: string; dest: string }>>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Search bus routes
@@ -46,8 +47,33 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
       if (routeInput.length === 0) return;
       setLoading(true);
       try {
-        const routes = await getKMBRouteInfo(routeInput);
-        setRouteResults(routes);
+        const kmbRoutes = await getKMBRouteInfo(routeInput);
+        if (kmbRoutes.length > 0) {
+          const dirs = kmbRoutes.map(r => ({
+            bound: r.bound as 'O' | 'I',
+            orig: r.orig_tc,
+            dest: r.dest_tc,
+          }));
+          setRouteDirections(dirs);
+          setCompany('KMB');
+          setRouteResults(kmbRoutes);
+        } else {
+          // Try CTB
+          const ctbRoutes = await getCitybusRouteInfo(routeInput);
+          if (ctbRoutes.length > 0) {
+            const dirs = ctbRoutes.map(r => ({
+              bound: r.bound as 'O' | 'I',
+              orig: r.orig_tc,
+              dest: r.dest_tc,
+            }));
+            setRouteDirections(dirs);
+            setCompany('CTB');
+            setRouteResults(ctbRoutes);
+          } else {
+            setRouteResults([]);
+            setRouteDirections([]);
+          }
+        }
       } catch (err) {
         console.error('Route search error:', err);
       }
@@ -57,31 +83,36 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
     return () => clearTimeout(timer);
   }, [routeInput, step, transportType]);
 
-  // Fetch stops when route is selected
+  // Fetch stops when entering stop selection
   useEffect(() => {
     if (step !== 'from_stop' && step !== 'to_stop') return;
-    if (!selectedRoute) return;
+    if (!selectedRoute && transportType === 'bus') return;
 
     const fetchStops = async () => {
       setLoading(true);
       try {
-        const routeStops = await getKMBRouteStops(
-          selectedRoute.route,
-          direction
-        );
-        
-        const stopsWithNames = await Promise.all(
-          routeStops.map(async (s) => {
-            const info = await getKMBStopInfo(s.stop);
-            return {
-              stopId: s.stop,
-              name: info?.name_tc || s.stop,
-              seq: s.seq,
-            };
-          })
-        );
-        
-        setStops(stopsWithNames.sort((a, b) => a.seq - b.seq));
+        if (transportType === 'bus' && selectedRoute) {
+          let routeStops: { stop: string; seq: number }[] = [];
+          if (company === 'KMB') {
+            routeStops = await getKMBRouteStops(selectedRoute.route, direction);
+          } else {
+            routeStops = await getCitybusRouteStops(selectedRoute.route, direction);
+          }
+
+          const stopsWithNames = await Promise.all(
+            routeStops.map(async (s) => {
+              const info = company === 'KMB'
+                ? await getKMBStopInfo(s.stop)
+                : await getCitybusStopInfo(s.stop);
+              return {
+                stopId: s.stop,
+                name: info?.name_tc || s.stop,
+                seq: s.seq,
+              };
+            })
+          );
+          setStops(stopsWithNames.sort((a, b) => a.seq - b.seq));
+        }
       } catch (err) {
         console.error('Stops fetch error:', err);
       }
@@ -89,7 +120,7 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
     };
 
     fetchStops();
-  }, [step, selectedRoute, direction]);
+  }, [step, selectedRoute, direction, transportType, company]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -97,17 +128,16 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
 
   const handleTransportSelect = (type: 'bus' | 'mtr') => {
     setTransportType(type);
-    if (type === 'mtr') {
-      setStep('route');
-    } else {
-      setStep('route');
-    }
+    setStep('route');
   };
 
   const handleRouteSelect = async (route: BusRoute) => {
     setSelectedRoute(route);
     setDirection(route.bound);
-    setStep('direction');
+    setFromStop(null);
+    setToStop(null);
+    // Go directly to stop selection
+    setStep('from_stop');
   };
 
   const handleMTRLineSelect = (line: MTRLine) => {
@@ -121,9 +151,11 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
     setStep('from_stop');
   };
 
-  const handleDirectionSelect = (dir: 'O' | 'I') => {
+  const handleDirectionChange = (dir: 'O' | 'I') => {
     setDirection(dir);
-    setStep('from_stop');
+    setFromStop(null);
+    setToStop(null);
+    // Stops will re-fetch via useEffect
   };
 
   const handleFromStopSelect = (stop: { stopId: string; name: string }) => {
@@ -155,15 +187,17 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
   const handleBack = () => {
     switch (step) {
       case 'route': setStep('transport'); break;
-      case 'direction': setStep('route'); break;
-      case 'from_stop': 
+      case 'from_stop':
         if (transportType === 'mtr') setStep('route');
-        else setStep('direction');
+        else setStep('route');
         break;
       case 'to_stop': setStep('from_stop'); break;
       case 'confirm': setStep('to_stop'); break;
     }
   };
+
+  // Get current direction display text
+  const currentDirInfo = routeDirections.find(d => d.bound === direction);
 
   return (
     <div className="space-y-4">
@@ -247,40 +281,31 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
         </div>
       )}
 
-      {/* Step: Direction */}
-      {step === 'direction' && selectedRoute && (
-        <div className="space-y-3">
-          <p className="text-gray-400 text-sm">選擇方向</p>
-          <button
-            onClick={() => handleDirectionSelect('O')}
-            className={`w-full border rounded-lg p-4 text-left transition-colors ${
-              direction === 'O' ? 'bg-blue-500/20 border-blue-500' : 'bg-white/5 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            <span className="text-white font-medium">→ {selectedRoute.dest_tc}</span>
-            <span className="text-gray-400 text-sm ml-2">（去程）</span>
-          </button>
-          <button
-            onClick={() => handleDirectionSelect('I')}
-            className={`w-full border rounded-lg p-4 text-left transition-colors ${
-              direction === 'I' ? 'bg-blue-500/20 border-blue-500' : 'bg-white/5 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            <span className="text-white font-medium">→ {selectedRoute.orig_tc}</span>
-            <span className="text-gray-400 text-sm ml-2">（回程）</span>
-          </button>
-          <button
-            onClick={() => setStep('from_stop')}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-4 rounded-lg transition-colors"
-          >
-            確認方向
-          </button>
-        </div>
-      )}
-
-      {/* Step: From Stop */}
+      {/* Step: From Stop (with inline direction toggle for bus) */}
       {step === 'from_stop' && (
         <div className="space-y-3">
+          {/* Inline direction toggle for bus */}
+          {transportType === 'bus' && routeDirections.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-400 shrink-0">方向</label>
+              <div className="flex gap-1 flex-wrap">
+                {routeDirections.map((d) => (
+                  <button
+                    key={d.bound}
+                    onClick={() => handleDirectionChange(d.bound)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      direction === d.bound
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                    }`}
+                  >
+                    {d.orig} → {d.dest}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <p className="text-gray-400 text-sm">選擇上車站</p>
           {loading ? (
             <p className="text-gray-400 text-sm">載入車站中...</p>
@@ -303,6 +328,28 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
       {/* Step: To Stop */}
       {step === 'to_stop' && (
         <div className="space-y-3">
+          {/* Inline direction toggle for bus */}
+          {transportType === 'bus' && routeDirections.length > 0 && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-400 shrink-0">方向</label>
+              <div className="flex gap-1 flex-wrap">
+                {routeDirections.map((d) => (
+                  <button
+                    key={d.bound}
+                    onClick={() => handleDirectionChange(d.bound)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      direction === d.bound
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                    }`}
+                  >
+                    {d.orig} → {d.dest}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <p className="text-gray-400 text-sm">選擇落車站</p>
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {stops

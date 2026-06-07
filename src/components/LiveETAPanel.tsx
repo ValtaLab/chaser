@@ -7,7 +7,7 @@ interface LiveETAPanelProps {
   segments: Array<{
     label: string;
     stopId: string;
-    type: 'bus' | 'mtr';
+    type: 'bus' | 'mtr' | 'gmb' | 'tram';
     company?: 'KMB' | 'CTB';
     route?: string;
     lineCode?: string;
@@ -87,7 +87,15 @@ export default function LiveETAPanel({ segments, autoRefresh = true }: LiveETAPa
     return 'bg-green-500/20 border-green-500/50';
   };
 
-  const getTransportIcon = (type: 'bus' | 'mtr') => type === 'bus' ? '🚌' : '🚇';
+  const getTransportIcon = (type: 'bus' | 'mtr' | 'gmb' | 'tram') => {
+    switch (type) {
+      case 'bus': return '🚌';
+      case 'mtr': return '🚇';
+      case 'gmb': return '🚐';
+      case 'tram': return '🚊';
+      default: return '🚍';
+    }
+  };
 
   return (
     <div className="space-y-4">

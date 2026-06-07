@@ -1,9 +1,11 @@
-// Combined ETA service — merges bus + MTR data
+// Combined ETA service — merges bus + MTR + GMB + tram data
 import { getStopETA, type StopETA } from './bus-api';
 import { getMTRETA, type MTRETA, findStation } from './mtr-api';
+import { getGMBStopETASummary, type GMBStopETAInfo } from './gmb-api';
+import { getEstimatedTramTime } from './tram-api';
 
 export interface TransportETA {
-  type: 'bus' | 'mtr';
+  type: 'bus' | 'mtr' | 'gmb' | 'tram';
   route: string;
   destination: string;
   minutesAway: number;
@@ -11,14 +13,15 @@ export interface TransportETA {
   remark?: string;
 }
 
-// Single stop ETA fetch (auto-detects bus vs MTR)
+// Single stop ETA fetch (auto-detects transport type)
 export async function fetchETA(
   stopId: string,
-  transportType: 'bus' | 'mtr',
+  transportType: 'bus' | 'mtr' | 'gmb' | 'tram',
   company: 'KMB' | 'CTB' = 'KMB',
   route?: string,
   lineCode?: string
 ): Promise<TransportETA[]> {
+  // MTR
   if (transportType === 'mtr' && lineCode) {
     const mtrETAs = await getMTRETA(lineCode, stopId);
     return mtrETAs
@@ -33,7 +36,33 @@ export async function fetchETA(
       .sort((a, b) => a.minutesAway - b.minutesAway);
   }
 
-  // Bus ETA
+  // GMB (Green Minibus)
+  if (transportType === 'gmb') {
+    const gmbETAs = await getGMBStopETASummary(parseInt(stopId), route);
+    return gmbETAs.map(eta => ({
+      type: 'gmb' as const,
+      route: eta.route,
+      destination: eta.destination,
+      minutesAway: eta.minutesAway,
+      remark: eta.remark,
+    }));
+  }
+
+  // Tram (static schedule)
+  if (transportType === 'tram') {
+    const tramETAs = getEstimatedTramTime();
+    return tramETAs
+      .filter(t => t.minutesAway >= 0)
+      .map(t => ({
+        type: 'tram' as const,
+        route: '電車',
+        destination: '電車服務',
+        minutesAway: t.minutesAway,
+        remark: t.remark,
+      }));
+  }
+
+  // Bus ETA (KMB/Citybus)
   const busETAs = await getStopETA(stopId, company, route);
   return busETAs.map(eta => ({
     type: 'bus' as const,
@@ -48,7 +77,7 @@ export async function fetchETA(
 export async function fetchMultipleETAs(
   stops: Array<{
     stopId: string;
-    type: 'bus' | 'mtr';
+    type: 'bus' | 'mtr' | 'gmb' | 'tram';
     company?: 'KMB' | 'CTB';
     route?: string;
     lineCode?: string;

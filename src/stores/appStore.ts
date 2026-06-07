@@ -26,6 +26,7 @@ interface AppState {
   setRoutes: (routes: CommuteRoute[]) => void;
   addRoute: (route: CommuteRoute) => void;
   removeRoute: (id: string) => void;
+  updateRoute: (id: string, updates: Partial<CommuteRoute>) => void;
   setActiveRoute: (route: CommuteRoute | null) => void;
   
   startJourney: (routeId: string) => void;
@@ -60,6 +61,9 @@ export const useAppStore = create<AppState>((set) => ({
   addRoute: (route) => set((state) => ({ routes: [...state.routes, route] })),
   removeRoute: (id) => set((state) => ({ 
     routes: state.routes.filter(r => r.id !== id) 
+  })),
+  updateRoute: (id, updates) => set((state) => ({
+    routes: state.routes.map(r => r.id === id ? { ...r, ...updates, updatedAt: new Date() } : r)
   })),
   setActiveRoute: (route) => set({ activeRoute: route }),
   

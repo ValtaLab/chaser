@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Providers from "@/components/Providers";
+import ServiceWorker注册 from "@/components/ServiceWorker注册";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -35,7 +37,10 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body className={`${inter.className} antialiased`}>
-        {children}
+        <Providers>
+          <ServiceWorker注册 />
+          {children}
+        </Providers>
       </body>
     </html>
   );
