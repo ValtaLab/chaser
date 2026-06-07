@@ -65,8 +65,9 @@ export async function getKMBRouteStops(
   bound: 'I' | 'O',
   serviceType: string = '1'
 ): Promise<{ stop: string; seq: number }[]> {
+  const direction = bound === 'O' ? 'outbound' : 'inbound';
   const res = await fetch(
-    `${KMB_ETA_BASE}/route-stop/${route}/${bound}/${serviceType}`
+    `${KMB_ETA_BASE}/route-stop/${route}/${direction}/${serviceType}`
   );
   const data = await res.json();
   return (data.data || []).map((s: { stop: string; seq: string }) => ({
@@ -91,8 +92,9 @@ export async function getCitybusRouteStops(
   route: string,
   direction: 'I' | 'O'
 ): Promise<{ stop: string; seq: number }[]> {
+  const dir = direction === 'O' ? 'outbound' : 'inbound';
   const res = await fetch(
-    `${CITYBUS_ETA_BASE}/route-stop/CTB/${route}/${direction}`
+    `${CITYBUS_ETA_BASE}/route-stop/CTB/${route}/${dir}`
   );
   const data = await res.json();
   return (data.data || []).map((s: { stop: string; seq: string }) => ({
