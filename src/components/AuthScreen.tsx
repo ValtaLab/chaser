@@ -93,19 +93,6 @@ export default function AuthScreen() {
             {mode === 'login' ? '未有帳號？立即註冊' : '已有帳號？立即登入'}
           </button>
         </div>
-
-        {/* Skip login */}
-        <div className="text-center mt-4">
-          <button
-            onClick={() => {
-              localStorage.setItem('chaser_skip_auth', 'true');
-              window.location.reload();
-            }}
-            className="text-gray-500 hover:text-gray-400 text-xs"
-          >
-            跳過登入，先用本地模式
-          </button>
-        </div>
       </div>
     </div>
   );

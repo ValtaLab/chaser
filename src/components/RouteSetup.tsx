@@ -9,6 +9,7 @@ import type { CommuteRoute } from '@/types';
 interface RouteSetupProps {
   editRoute?: CommuteRoute | null;
   onDone?: (route?: CommuteRoute) => void;
+  onSave?: (route: CommuteRoute) => void;
 }
 
 interface StopOption {
@@ -25,7 +26,7 @@ interface RouteValidation {
   directions?: Array<{ seq: number; orig: string; dest: string }>;
 }
 
-export default function RouteSetup({ editRoute, onDone }: RouteSetupProps) {
+export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProps) {
   const { addRoute, updateRoute } = useAppStore();
   const [step, setStep] = useState<'name' | 'segments' | 'confirm'>('name');
   const [routeName, setRouteName] = useState('');
@@ -320,6 +321,10 @@ export default function RouteSetup({ editRoute, onDone }: RouteSetupProps) {
     }
     setSavedRoute(savedRoute);
     setStep('confirm');
+    // Save to cloud immediately — don't wait for handleDone
+    if (savedRoute && onSave) {
+      onSave(savedRoute);
+    }
   };
 
   const handleDone = () => {
@@ -450,7 +455,7 @@ export default function RouteSetup({ editRoute, onDone }: RouteSetupProps) {
                           <input
                             type="text"
                             value={seg.routeName}
-                            onChange={(e) => updateSegment(index, 'routeName', e.target.value)}
+                            onChange={(e) => updateSegment(index, 'routeName', e.target.value.toUpperCase())}
                             placeholder="例：1A"
                             className={getInputClasses(index)}
                           />
@@ -506,11 +511,18 @@ export default function RouteSetup({ editRoute, onDone }: RouteSetupProps) {
                               value={seg.fromStop}
                               onChange={(e) => {
                                 const selected = stops.find(s => s.name === e.target.value);
-                                updateSegment(index, 'fromStop', e.target.value);
-                                if (selected) {
-                                  const updated = [...segments];
-                                  updated[index] = { ...updated[index], fromStopId: selected.id };
-                                  setSegments(updated);
+                                const updated = [...segments];
+                                updated[index] = {
+                                  ...updated[index],
+                                  fromStop: e.target.value,
+                                  fromStopId: selected?.id || '',
+                                };
+                                setSegments(updated);
+
+                                // Debounce route validation if needed
+                                if (updated[index].routeName) {
+                                  const timer = debounceTimers.current.get(index);
+                                  if (timer) clearTimeout(timer);
                                 }
                               }}
                               className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-32 overflow-y-auto"
@@ -537,12 +549,13 @@ export default function RouteSetup({ editRoute, onDone }: RouteSetupProps) {
                               value={seg.toStop}
                               onChange={(e) => {
                                 const selected = stops.find(s => s.name === e.target.value);
-                                updateSegment(index, 'toStop', e.target.value);
-                                if (selected) {
-                                  const updated = [...segments];
-                                  updated[index] = { ...updated[index], toStopId: selected.id };
-                                  setSegments(updated);
-                                }
+                                const updated = [...segments];
+                                updated[index] = {
+                                  ...updated[index],
+                                  toStop: e.target.value,
+                                  toStopId: selected?.id || '',
+                                };
+                                setSegments(updated);
                               }}
                               className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-32 overflow-y-auto"
                             >

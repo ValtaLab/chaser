@@ -2,15 +2,15 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-06-06T22:30:00+08:00
-last_version: route-validation-v1
+last_deploy: 2026-06-08T18:10:00+08:00
+last_version: cloud-save-fix-v1
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
 
-## 🚀 最新狀態 (2026-06-06)
-**版本:** `route-validation-v1` | **部署時間:** 22:30 HKT | **狀態:** 運行中  
+## 🚀 最新狀態 (2026-06-08)
+**版本:** `cloud-save-fix-v1` | **部署時間:** 18:10 HKT | **狀態:** 運行中  
 **部署地址:** https://master.chaser-6ta.pages.dev
 
 ### 核心功能
@@ -37,6 +37,15 @@ last_update_by: HermesBPi
 ---
 
 ## 📝 變更歷史
+
+### 2026-06-08 | 雲端儲存修復 + Bug Fixes
+**版本:** cloud-save-fix-v1  
+1. **根因診斷**: 用 Debug panel 證實 `saveToCloud` 靜默失敗 — API 返回錯誤但冇 check `res.ok`
+2. **`onSave` callback**: `saveToCloud` 改為 click「儲存路線」時即時觸發，唔再等 `handleDone`（防止用底部導航離開時漏 save）
+3. **Error handling**: `saveToCloud` + `syncFromCloud` 加 `res.ok` check，失敗時顯示錯誤
+4. **🐛 Debug panel**: 頁面底部可見嘅 debug log，手機唔需要 DevTools 就可以 trace auth/sync/save 流程
+5. **`toUpperCase()` 修復**: 路線號碼輸入細楷自動轉大楷（Citybus API 需要大楷）
+6. **車站選擇修復**: `onChange` 只 call 一次 `setSegments`，唔再有第二次覆蓋導致選擇消失
 
 ### 2026-06-06 | 路線驗證 + 車站選擇器
 **版本:** route-validation-v1  
@@ -70,6 +79,13 @@ last_update_by: HermesBPi
 **版本:** transport-v1  
 1. `gmb-api.ts` + `tram-api.ts`
 
+### 2026-06-07 | 路線持久化 + 快取修復
+**版本:** persist-fix-v1  
+1. **Zustand persist middleware** — 路線存入 localStorage，刷新唔會消失
+2. **Service Worker cache** — 靜態資源改 network-first，永遠取最新版
+3. **Cache 版本升級** v1 → v2，清除舊 cache
+4. **Settings 清除快取** 指向新 cache name
+
 ### 2026-06-06 | Web Push 通知
 **版本:** push-v1  
 
@@ -78,3 +94,10 @@ last_update_by: HermesBPi
 
 ### 2026-06-06 | 項目初始化
 **版本:** ea8ed7a  
+## 2026-06-08 | Route persistence fix
+
+**版本:** persist-merge-v1
+1. **Zustand persist** — routes 存入 localStorage
+2. **Cloud sync merge** — 唔再 blind overwrite，merge 雲端 + 本地
+3. **Service Worker** — network-first + version forced cache clear
+4. **_headers** — Clear-Site-Data + no-cache HTML

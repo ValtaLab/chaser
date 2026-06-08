@@ -43,7 +43,7 @@ interface AppState {
   setError: (error: string | null) => void;
 }
 
-export const useAppStore = create<AppState>((set) => ({
+export const useAppStore = create<AppState>()((set) => ({
   // Initial state
   routes: [],
   activeRoute: null,

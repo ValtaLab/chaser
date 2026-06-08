@@ -50,7 +50,7 @@ export async function getKMBRouteInfo(route: string): Promise<BusRoute[]> {
 }
 
 export async function getCitybusRouteInfo(route: string): Promise<BusRoute[]> {
-  const res = await fetch(`${CITYBUS_ETA_BASE}/route/CTB/${route}`);
+  const res = await fetch(`${CITYBUS_ETA_BASE}/route/CTB/${route.toUpperCase()}`);
   const data = await res.json();
   // Citybus returns empty object {} when no route found
   const result = data.data;
@@ -94,7 +94,7 @@ export async function getCitybusRouteStops(
 ): Promise<{ stop: string; seq: number }[]> {
   const dir = direction === 'O' ? 'outbound' : 'inbound';
   const res = await fetch(
-    `${CITYBUS_ETA_BASE}/route-stop/CTB/${route}/${dir}`
+    `${CITYBUS_ETA_BASE}/route-stop/CTB/${route.toUpperCase()}/${dir}`
   );
   const data = await res.json();
   return (data.data || []).map((s: { stop: string; seq: string }) => ({

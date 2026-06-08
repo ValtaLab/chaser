@@ -34,7 +34,6 @@ export default function UserMenu() {
             <button
               onClick={() => {
                 logout();
-                localStorage.removeItem('chaser_skip_auth');
                 setOpen(false);
               }}
               className="w-full text-left px-4 py-3 text-red-400 hover:bg-white/5 transition-colors text-sm"

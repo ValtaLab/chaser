@@ -1,18 +1,37 @@
-"use client";
+'use client';
 
-import { useEffect } from "react";
+import { useEffect } from 'react';
 
 export default function ServiceWorker注册() {
   useEffect(() => {
-    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+    if ('serviceWorker' in navigator) {
       navigator.serviceWorker
-        .register("/sw.js")
-        .then((reg) => {
-          console.log("[SW] registered:", reg.scope);
-          // Check for updates every 60 min
-          setInterval(() => reg.update(), 60 * 60 * 1000);
+        .register('/sw.js')
+        .then((registration) => {
+          registration.update();
+
+          registration.addEventListener('updatefound', () => {
+            const newWorker = registration.installing;
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'activated') {
+                  window.location.reload();
+                }
+              });
+            }
+          });
         })
-        .catch((err) => console.error("[SW] registration failed:", err));
+        .catch((err) => {
+          console.error('SW registration failed:', err);
+        });
+
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) {
+          refreshing = true;
+          window.location.reload();
+        }
+      });
     }
   }, []);
 

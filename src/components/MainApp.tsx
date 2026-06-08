@@ -32,20 +32,35 @@ export default function MainApp() {
   const [editingRoute, setEditingRoute] = useState<CommuteRoute | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [skipAuth, setSkipAuth] = useState(false);
-
-  // Check skip auth on mount
-  useEffect(() => {
-    setSkipAuth(localStorage.getItem('chaser_skip_auth') === 'true');
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
+  const addDebug = useCallback((msg: string) => {
+    const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
+    const line = `${ts} ${msg}`;
+    console.log(line);
+    setDebugLogs(prev => [...prev.slice(-30), line]);
   }, []);
 
   // Sync routes from cloud
   const syncFromCloud = useCallback(async () => {
-    if (!user || !token) return;
+    if (!user || !token) {
+      addDebug('⚠️ sync: no user/token');
+      return;
+    }
     setSyncing(true);
     try {
+      addDebug('☁️ sync: fetching...');
       const res = await authenticatedFetch('/routes');
+      addDebug(`☁️ sync: status ${res.status}`);
+      if (!res.ok) {
+        const errText = await res.text();
+        addDebug(`❌ sync error: ${res.status} ${errText.substring(0, 80)}`);
+        setSyncing(false);
+        return;
+      }
       const data = await res.json();
+      const count = data.routes?.length ?? 0;
+      addDebug(`☁️ sync: got ${count} routes`);
       if (data.routes) {
         const cloudRoutes: CommuteRoute[] = data.routes.map((r: Record<string, unknown>) => ({
           id: r.id as string,
@@ -55,26 +70,34 @@ export default function MainApp() {
           createdAt: new Date(r.created_at as string),
           updatedAt: new Date(r.updated_at as string),
         }));
+        addDebug(`✅ sync: set ${cloudRoutes.map(r => r.name).join(',')}`);
         setRoutes(cloudRoutes);
       }
     } catch (e) {
-      console.error('Sync failed:', e);
+      addDebug(`❌ sync exception: ${e}`);
     }
     setSyncing(false);
-  }, [user, token, authenticatedFetch, setRoutes]);
+  }, [user, token, authenticatedFetch, setRoutes, addDebug]);
 
   // Auto sync on login
   useEffect(() => {
+    addDebug(`🔑 auth: user=${!!user} token=${!!token} loading=${isLoading}`);
     if (user && token) {
+      addDebug('🔄 auth: triggering sync');
       syncFromCloud();
     }
-  }, [user, token, syncFromCloud]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, token, isLoading]);
 
   // Save route to cloud
   const saveToCloud = useCallback(async (route: CommuteRoute) => {
-    if (!user || !token) return;
+    if (!user || !token) {
+      addDebug('⚠️ save: no user/token');
+      return;
+    }
     try {
-      await authenticatedFetch('/routes', {
+      addDebug(`💾 save: ${route.name} (${route.id})`);
+      const res = await authenticatedFetch('/routes', {
         method: 'POST',
         body: JSON.stringify({
           id: route.id,
@@ -83,10 +106,17 @@ export default function MainApp() {
           segments: route.segments,
         }),
       });
+      addDebug(`💾 save: status ${res.status}`);
+      if (!res.ok) {
+        const err = await res.text();
+        addDebug(`❌ save error: ${res.status} ${err.substring(0, 80)}`);
+      } else {
+        addDebug('✅ save: ok');
+      }
     } catch (e) {
-      console.error('Save to cloud failed:', e);
+      addDebug(`❌ save exception: ${e}`);
     }
-  }, [user, token, authenticatedFetch]);
+  }, [user, token, authenticatedFetch, addDebug]);
 
   // Delete route from cloud
   const deleteFromCloud = useCallback(async (routeId: string) => {
@@ -114,8 +144,8 @@ export default function MainApp() {
     setDeleteConfirm(null);
   };
 
-  // Show auth screen if not logged in and not skipping
-  if (!isLoading && !user && !skipAuth) {
+  // Show auth screen if not logged in
+  if (!isLoading && !user) {
     return <AuthScreen />;
   }
 
@@ -145,17 +175,7 @@ export default function MainApp() {
               )}
               <PushNotification />
               <InstallPrompt />
-              {user ? <UserMenu /> : (
-                <button
-                  onClick={() => {
-                    localStorage.removeItem('chaser_skip_auth');
-                    window.location.reload();
-                  }}
-                  className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors text-sm"
-                >
-                  🔑
-                </button>
-              )}
+              <UserMenu />
               <button
                 onClick={() => setCurrentView(currentView === 'settings' ? 'home' : 'settings')}
                 className="bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors"
@@ -272,9 +292,11 @@ export default function MainApp() {
 
         {currentView === 'setup' && (
           <RouteSetup
+            onSave={(route) => {
+              if (user) saveToCloud(route);
+            }}
             onDone={(route) => {
               setCurrentView('home');
-              if (route && user) saveToCloud(route);
             }}
           />
         )}
@@ -282,10 +304,12 @@ export default function MainApp() {
         {currentView === 'edit' && editingRoute && (
           <RouteSetup
             editRoute={editingRoute}
+            onSave={(route) => {
+              if (user) saveToCloud(route);
+            }}
             onDone={(route) => {
               setCurrentView('home');
               setEditingRoute(null);
-              if (route && user) saveToCloud(route);
             }}
           />
         )}
@@ -310,6 +334,27 @@ export default function MainApp() {
           </div>
         )}
       </main>
+
+      {/* Debug Panel */}
+      <div className="fixed bottom-16 left-0 right-0 z-50 max-w-md mx-auto">
+        <button
+          onClick={() => setShowDebug(!showDebug)}
+          className="ml-auto mr-2 mb-1 bg-gray-800/90 text-yellow-400 text-xs px-2 py-1 rounded border border-yellow-400/30"
+        >
+          🐛 {showDebug ? '收起' : `Debug (${debugLogs.length})`}
+        </button>
+        {showDebug && (
+          <div className="mx-2 mb-2 bg-black/95 border border-yellow-400/30 rounded-lg p-3 max-h-48 overflow-y-auto">
+            {debugLogs.length === 0 ? (
+              <p className="text-gray-500 text-xs">No logs yet</p>
+            ) : (
+              debugLogs.map((log, i) => (
+                <p key={i} className="text-xs font-mono text-green-400 leading-tight whitespace-nowrap overflow-x-auto">{log}</p>
+              ))
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-black/20 backdrop-blur-lg border-t border-white/10">

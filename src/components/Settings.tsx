@@ -37,7 +37,6 @@ export default function Settings({ onClose }: SettingsProps) {
 
   const handleLogout = () => {
     logout();
-    localStorage.removeItem('chaser_skip_auth');
     setAuthMode('menu');
   };
 
@@ -165,7 +164,7 @@ export default function Settings({ onClose }: SettingsProps) {
             onClick={() => {
               // Clear API cache
               if ('caches' in window) {
-                caches.delete('chaser-v1').then(() => {
+                caches.delete('chaser-v2').then(() => {
                   alert('快取已清除，下次查詢會更新資料');
                 });
               }
