@@ -104,7 +104,7 @@ export default function SwipeableRouteCard({ route, onStart, onEdit, onDelete }:
   }, [resetSwipe, onDelete]);
 
   return (
-    <div className="relative overflow-hidden rounded-lg">
+    <div className="relative" style={{ minHeight: 80 }}>
       {/* Action buttons (behind the card) */}
       <div className="absolute right-0 top-0 bottom-0 flex" style={{ width: ACTION_WIDTH }}>
         <button
@@ -129,7 +129,7 @@ export default function SwipeableRouteCard({ route, onStart, onEdit, onDelete }:
 
       {/* Main card (slides left) */}
       <div
-        className="bg-white/5 border border-white/10 rounded-lg p-4 transition-transform"
+        className="absolute inset-0 z-10 bg-slate-800 border border-white/10 rounded-lg p-4 transition-transform"
         style={{
           transform: `translateX(${offsetX}px)`,
           transition: isDraggingRef.current ? 'none' : 'transform 0.2s ease-out',

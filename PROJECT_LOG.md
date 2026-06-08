@@ -46,6 +46,7 @@ last_update_by: HermesBPi
 4. **🐛 Debug panel**: 頁面底部可見嘅 debug log，手機唔需要 DevTools 就可以 trace auth/sync/save 流程
 5. **`toUpperCase()` 修復**: 路線號碼輸入細楷自動轉大楷（Citybus API 需要大楷）
 6. **車站選擇修復**: `onChange` 只 call 一次 `setSegments`，唔再有第二次覆蓋導致選擇消失
+7. **SwipeableRouteCard 修復**: 編輯/刪除按鈟預設隱藏，改用 `absolute inset-0` + `bg-slate-800` 覆蓋，左滑才顯示
 
 ### 2026-06-06 | 路線驗證 + 車站選擇器
 **版本:** route-validation-v1  
