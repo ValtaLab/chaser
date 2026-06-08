@@ -52,14 +52,15 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
     if (editRoute) {
       setRouteName(editRoute.name);
       setDirection(editRoute.direction);
-      setSegments(editRoute.segments.map(seg => ({
+      const editSegments = editRoute.segments.map(seg => ({
         routeType: seg.route.type as 'bus' | 'mtr' | 'minibus' | 'tram',
         routeName: seg.route.name,
         fromStop: seg.fromStop.nameZh,
         toStop: seg.toStop.nameZh,
         fromStopId: seg.fromStop.id,
         toStopId: seg.toStop.id,
-      })));
+      }));
+      setSegments(editSegments);
       setStep('segments');
     }
   }, [editRoute]);
@@ -147,6 +148,18 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
       setValidations(prev => new Map(prev).set(index, { status: 'invalid' }));
     }
   }, []);
+
+  // Trigger validation when editing (after validateAndLoadStops is defined)
+  useEffect(() => {
+    if (editRoute && segments.length > 0) {
+      segments.forEach((seg, index) => {
+        if (seg.routeName) {
+          validateAndLoadStops(index, seg.routeType, seg.routeName);
+        }
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRoute]);
 
   const loadKMBStops = async (index: number, route: string, bound: 'I' | 'O') => {
     const stops = await getKMBRouteStops(route, bound);
