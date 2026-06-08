@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { useAuth } from '@/lib/auth-context';
 import RouteSetup from './RouteSetup';
@@ -79,6 +79,46 @@ export default function MainApp() {
     setSyncing(false);
   }, [user, token, authenticatedFetch, setRoutes, addDebug]);
 
+  // Pull-to-refresh state
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const touchStartY = useRef(0);
+  const isPulling = useRef(false);
+  const PULL_THRESHOLD = 80;
+
+  // Pull-to-refresh handlers
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (currentView !== 'home') return;
+    const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+    if (scrollTop <= 0) {
+      touchStartY.current = e.touches[0].clientY;
+      isPulling.current = true;
+    }
+  }, [currentView]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isPulling.current || currentView !== 'home') return;
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - touchStartY.current;
+    if (diff > 0) {
+      setPullDistance(Math.min(diff * 0.5, 120));
+    }
+  }, [currentView]);
+
+  const handleTouchEnd = useCallback(async () => {
+    if (!isPulling.current) return;
+    isPulling.current = false;
+    
+    if (pullDistance >= PULL_THRESHOLD && !isRefreshing) {
+      setIsRefreshing(true);
+      setPullDistance(60);
+      addDebug('🔄 pull-to-refresh triggered');
+      await syncFromCloud();
+      setIsRefreshing(false);
+    }
+    setPullDistance(0);
+  }, [pullDistance, isRefreshing, syncFromCloud, addDebug]);
+
   // Auto sync on login
   useEffect(() => {
     addDebug(`🔑 auth: user=${!!user} token=${!!token} loading=${isLoading}`);
@@ -150,7 +190,27 @@ export default function MainApp() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+    <div 
+      className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull-to-refresh indicator */}
+      {pullDistance > 0 && (
+        <div 
+          className="fixed top-0 left-0 right-0 z-50 flex items-center justify-center transition-all"
+          style={{ height: pullDistance, opacity: Math.min(pullDistance / 60, 1) }}
+        >
+          <div className={`text-white text-center ${isRefreshing ? 'animate-spin' : ''}`}>
+            {isRefreshing ? '🔄' : pullDistance >= PULL_THRESHOLD ? '🔃' : '⬇️'}
+          </div>
+          <p className="text-white text-xs ml-2">
+            {isRefreshing ? '刷新中...' : pullDistance >= PULL_THRESHOLD ? '鬆開刷新' : '下拉刷新'}
+          </p>
+        </div>
+      )}
+      
       {/* Header */}
       <header className="bg-black/20 backdrop-blur-lg border-b border-white/10">
         <div className="max-w-md mx-auto px-4 py-4">
