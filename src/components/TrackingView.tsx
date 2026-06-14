@@ -719,7 +719,7 @@ export default function TrackingView({
           🐛 Debug ({debugLogs.length})
         </button>
         {showDebugPanel && (
-          <div className="absolute bottom-8 left-0 w-[300px] max-h-[250px] bg-black/90 backdrop-blur-xl rounded-xl border border-yellow-500/30 overflow-hidden">
+          <div className="absolute bottom-20 left-0 w-[300px] max-h-[250px] bg-black/90 backdrop-blur-xl rounded-xl border border-yellow-500/30 overflow-hidden" style={{ zIndex: 1003 }}>
             <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10">
               <span className="text-[10px] text-yellow-400 font-medium">Debug Logs</span>
               <button onClick={() => setDebugLogs([])} className="text-[10px] text-gray-500 hover:text-white">Clear</button>
