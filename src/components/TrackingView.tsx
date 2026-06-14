@@ -421,41 +421,40 @@ export default function TrackingView({
   useEffect(() => {
     if (segmentETAs.length === 0) return;
 
-    // Debug: log segmentETAs structure
-    console.log('[AltRoutes] segmentETAs:', JSON.stringify(segmentETAs.map(s => ({
+    // Debug: log segmentETAs structure (visible in app debug panel)
+    addDebug(`[AltRoutes] segmentETAs: ${JSON.stringify(segmentETAs.map(s => ({
       segmentId: s.segmentId,
       label: s.label,
-      etas: s.etas.map(e => ({ minutesAway: e.minutesAway, destination: e.destination }))
-    })), null, 2));
+      etas: s.etas.map(e => ({ min: e.minutesAway, dest: e.destination }))
+    })))}`);
 
     async function findAlts() {
-      console.log('[AltRoutes] Starting search, segments:', segmentETAs.length);
+      addDebug(`[AltRoutes] Starting search, ${segmentETAs.length} segments`);
       const altResults: SegmentAlternatives[] = [];
       for (const segETA of segmentETAs) {
         const seg = route.segments.find(s => s.id === segETA.segmentId);
         if (!seg) continue;
 
-        console.log('[AltRoutes] Checking segment:', seg.route.name, 'from', seg.fromStop.nameZh);
-        console.log('[AltRoutes] ETAs for this segment:', segETA.etas);
+        addDebug(`[AltRoutes] Checking ${seg.route.name} from ${seg.fromStop.nameZh}`);
+        addDebug(`[AltRoutes] ETAs: ${JSON.stringify(segETA.etas.map(e => ({ min: e.minutesAway, dest: e.destination })))}`);
         try {
           const result = await findAlternativesForSegment(seg, segETA.etas);
-          console.log('[AltRoutes] Found', result.alternatives.length, 'alternatives for', seg.route.name);
-          console.log('[AltRoutes] isLastBusPassed:', result.isLastBusPassed);
+          addDebug(`[AltRoutes] Found ${result.alternatives.length} alts, isLastBusPassed=${result.isLastBusPassed}`);
           if (result.alternatives.length > 0) {
             altResults.push(result);
           }
         } catch (err) {
-          console.error('[AltRoutes] Error for', seg.id, err);
+          addDebug(`[AltRoutes] Error: ${err}`);
         }
       }
-      console.log('[AltRoutes] Total alternatives found:', altResults.length);
+      addDebug(`[AltRoutes] Total: ${altResults.length} alternatives`);
       // Only update if we found alternatives, otherwise keep previous state
       if (altResults.length > 0) {
         setAlternatives(altResults);
       }
     }
     findAlts();
-  }, [segmentETAs, route.segments]);
+  }, [segmentETAs, route.segments, addDebug]);
 
   // ── Smart route recommendation (runs once when location available) ──
   useEffect(() => {
