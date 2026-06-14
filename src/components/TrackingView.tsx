@@ -421,6 +421,13 @@ export default function TrackingView({
   useEffect(() => {
     if (segmentETAs.length === 0) return;
 
+    // Debug: log segmentETAs structure
+    console.log('[AltRoutes] segmentETAs:', JSON.stringify(segmentETAs.map(s => ({
+      segmentId: s.segmentId,
+      label: s.label,
+      etas: s.etas.map(e => ({ minutesAway: e.minutesAway, destination: e.destination }))
+    })), null, 2));
+
     async function findAlts() {
       console.log('[AltRoutes] Starting search, segments:', segmentETAs.length);
       const altResults: SegmentAlternatives[] = [];
@@ -429,9 +436,11 @@ export default function TrackingView({
         if (!seg) continue;
 
         console.log('[AltRoutes] Checking segment:', seg.route.name, 'from', seg.fromStop.nameZh);
+        console.log('[AltRoutes] ETAs for this segment:', segETA.etas);
         try {
           const result = await findAlternativesForSegment(seg, segETA.etas);
           console.log('[AltRoutes] Found', result.alternatives.length, 'alternatives for', seg.route.name);
+          console.log('[AltRoutes] isLastBusPassed:', result.isLastBusPassed);
           if (result.alternatives.length > 0) {
             altResults.push(result);
           }
