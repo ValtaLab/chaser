@@ -2,6 +2,13 @@
 
 import { useEffect } from 'react';
 
+// Module-level callback for update notifications
+let onUpdateAvailableCallback: (() => void) | null = null;
+
+export function setOnUpdateAvailable(cb: (() => void) | null) {
+  onUpdateAvailableCallback = cb;
+}
+
 export default function ServiceWorker注册() {
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -15,7 +22,11 @@ export default function ServiceWorker注册() {
             if (newWorker) {
               newWorker.addEventListener('statechange', () => {
                 if (newWorker.state === 'activated') {
-                  window.location.reload();
+                  if (onUpdateAvailableCallback) {
+                    onUpdateAvailableCallback();
+                  } else {
+                    window.location.reload();
+                  }
                 }
               });
             }

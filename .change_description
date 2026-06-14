@@ -1,0 +1,7 @@
+UI: stronger contrast for white theme
+- Deeper blue/indigo header gradient
+- Thicker card borders (border-2, border-300/400)
+- Bolder text (font-semibold, darker grays)
+- Color-tinted stat cards (blue/green/gray borders)
+- Stronger nav active states
+- More saturated badge colors

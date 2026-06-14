@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = "chaser-v2";
-const SW_VERSION = "2.0.0";
+const CACHE_NAME = "chaser-v3";
+const SW_VERSION = "3.0.0";
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",

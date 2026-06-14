@@ -45,10 +45,10 @@ export default function InstallPrompt() {
   return (
     <button
       onClick={handleInstall}
-      className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2 px-3 rounded-lg transition-colors flex items-center gap-1.5"
+      className="w-9 h-9 bg-white border border-gray-200 flex items-center justify-center rounded-xl text-sm shadow-sm transition-all active:scale-90"
+      title="安裝 App"
     >
-      <span>📲</span>
-      <span>安裝 App</span>
+      📲
     </button>
   );
 }

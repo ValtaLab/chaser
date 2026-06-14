@@ -9,7 +9,6 @@ export default function LocationTracker() {
   const [permission, setPermission] = useState<PermissionState>('prompt');
 
   useEffect(() => {
-    // Check permission status
     if (navigator.permissions) {
       navigator.permissions.query({ name: 'geolocation' }).then((result) => {
         setPermission(result.state);
@@ -55,18 +54,28 @@ export default function LocationTracker() {
 
   if (permission === 'denied') {
     return (
-      <div className="bg-red-500/20 border border-red-500/50 rounded-lg p-4 text-red-200">
-        <p className="font-medium">定位權限被拒絕</p>
-        <p className="text-sm mt-1">請在瀏覽器設定中允許定位權限</p>
+      <div className="bg-white border border-red-200 rounded-xl p-3 shadow-sm animate-scale-in">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">📍</span>
+          <div>
+            <p className="text-xs font-medium text-red-600">定位權限被拒絕</p>
+            <p className="text-[10px] text-gray-400 mt-0.5">請在瀏覽器設定中允許</p>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-yellow-500/20 border border-yellow-500/50 rounded-lg p-4 text-yellow-200">
-        <p className="font-medium">定位錯誤</p>
-        <p className="text-sm mt-1">{error}</p>
+      <div className="bg-white border border-yellow-200 rounded-xl p-3 shadow-sm animate-scale-in">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">⚠️</span>
+          <div>
+            <p className="text-xs font-medium text-yellow-600">定位錯誤</p>
+            <p className="text-[10px] text-gray-400 mt-0.5 truncate">{error}</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -76,16 +85,12 @@ export default function LocationTracker() {
   }
 
   return (
-    <div className="bg-green-500/20 border border-green-500/50 rounded-lg p-4 text-green-200">
-      <div className="flex items-center gap-2">
-        <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-        <p className="font-medium">正在追蹤位置</p>
+    <div className="flex items-center gap-2 px-1">
+      <div className="relative">
+        <div className="w-2 h-2 bg-green-500 rounded-full" />
+        <div className="absolute inset-0 w-2 h-2 bg-green-500 rounded-full animate-ping" />
       </div>
-      {currentLocation && (
-        <p className="text-sm mt-1 text-green-300">
-          {currentLocation.lat.toFixed(6)}, {currentLocation.lng.toFixed(6)}
-        </p>
-      )}
+      <span className="text-[11px] text-green-600 font-medium">GPS 追蹤中</span>
     </div>
   );
 }

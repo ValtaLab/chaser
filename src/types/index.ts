@@ -80,3 +80,24 @@ export interface UserPreferences {
   language: 'zh-HK' | 'en';
   darkMode: boolean;
 }
+
+// Smart route recommendation types
+export interface SmartSegment {
+  type: 'walk' | 'wait' | 'ride';
+  minutes: number;
+  description: string;  // e.g. '步行至 富蝶總站' / '等 72X' / '乘搭 72X'
+  fromLocation?: Location;
+  toLocation?: Location;
+}
+
+export interface SmartRouteRecommendation {
+  routeId: string;
+  routeName: string;
+  direction: 'to_work' | 'to_home';
+  totalMinutes: number;
+  segments: SmartSegment[];
+  departureTime: Date;     // when user should leave
+  arrivalTime: Date;       // estimated arrival
+  canMakeIt: boolean;      // can catch the next vehicle
+  confidence: 'high' | 'medium' | 'low';  // ETA reliability
+}

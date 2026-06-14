@@ -2,96 +2,75 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-const PUSH_API = "https://chaser-push.isearover.workers.dev";
+const STORAGE_KEY = "chaser-notifications-enabled";
 
 export default function PushNotification() {
-  const [subscribed, setSubscribed] = useState(false);
+  const [enabled, setEnabled] = useState(false);
   const [supported, setSupported] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    setSupported(
-      typeof window !== "undefined" &&
-        "serviceWorker" in navigator &&
-        "PushManager" in window
-    );
-    // Check existing subscription
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.pushManager.getSubscription().then((sub) => {
-          setSubscribed(!!sub);
-        });
-      });
-    }
-  }, []);
-
-  const subscribe = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Get VAPID public key from worker
-      const res = await fetch(`${PUSH_API}/vapidPublicKey`);
-      const { publicKey } = await res.json();
-
-      const reg = await navigator.serviceWorker.ready;
-      const subscription = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(publicKey),
-      });
-
-      // Send subscription to backend
-      await fetch(`${PUSH_API}/subscribe`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(subscription.toJSON()),
-      });
-
-      setSubscribed(true);
-    } catch (e) {
-      console.error("Push subscription failed:", e);
-    }
-    setLoading(false);
-  }, []);
-
-  const unsubscribe = useCallback(async () => {
-    setLoading(true);
-    try {
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.getSubscription();
-      if (sub) {
-        await sub.unsubscribe();
+    setMounted(true);
+    const hasNotification = "Notification" in window;
+    setSupported(hasNotification);
+    if (hasNotification) {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved !== null) {
+        setEnabled(saved === "true");
+      } else {
+        setEnabled(Notification.permission === "granted");
       }
-      setSubscribed(false);
-    } catch (e) {
-      console.error("Push unsubscription failed:", e);
     }
-    setLoading(false);
   }, []);
 
-  if (!supported) return null;
+  const toggle = useCallback(async () => {
+    if (!("Notification" in window)) return;
+
+    if (enabled) {
+      setEnabled(false);
+      localStorage.setItem(STORAGE_KEY, "false");
+    } else {
+      if (Notification.permission === "denied") {
+        return;
+      }
+      const result = await Notification.requestPermission();
+      if (result === "granted") {
+        setEnabled(true);
+        localStorage.setItem(STORAGE_KEY, "true");
+      }
+    }
+  }, [enabled]);
+
+  if (!mounted) {
+    return <div className="w-12 h-7 rounded-full bg-gray-200 flex-shrink-0" />;
+  }
+
+  if (!supported) {
+    return (
+      <span className="text-xs text-gray-400">
+        需加至主屏幕
+      </span>
+    );
+  }
 
   return (
     <button
-      onClick={subscribed ? unsubscribe : subscribe}
-      disabled={loading}
-      className={`text-sm font-medium py-2 px-3 rounded-lg transition-colors flex items-center gap-1.5 ${
-        subscribed
-          ? "bg-green-600/30 text-green-300 border border-green-500/30"
-          : "bg-white/10 hover:bg-white/20 text-white"
-      }`}
+      type="button"
+      onClick={toggle}
+      className="relative w-12 h-7 rounded-full transition-colors flex-shrink-0"
+      style={{
+        backgroundColor: enabled ? '#3b82f6' : '#d1d5db',
+        overflow: 'hidden',
+      }}
     >
-      <span>{subscribed ? "🔔" : "🔕"}</span>
-      <span>{loading ? "..." : subscribed ? "已訂閱" : "開啟通知"}</span>
+      <span
+        className="absolute w-6 h-6 bg-white rounded-full shadow transition-transform duration-200"
+        style={{
+          top: '2px',
+          left: '2px',
+          transform: enabled ? 'translateX(20px)' : 'translateX(0)',
+        }}
+      />
     </button>
   );
-}
-
-function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray.buffer;
 }

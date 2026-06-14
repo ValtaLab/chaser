@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 import { getKMBRouteInfo, getKMBRouteStops, getKMBStopInfo, getCitybusRouteInfo, getCitybusRouteStops, getCitybusStopInfo } from '@/lib/bus-api';
 import { getGMBRouteInfo, getGMBRouteStops } from '@/lib/gmb-api';
+import { MTR_LINES, getLineStations, findStation } from '@/lib/mtr-api';
 import type { CommuteRoute } from '@/types';
 
 interface RouteSetupProps {
@@ -16,6 +17,8 @@ interface StopOption {
   id: string;
   name: string;
   seq: number;
+  lat?: number;
+  lng?: number;
 }
 
 interface RouteValidation {
@@ -23,7 +26,7 @@ interface RouteValidation {
   company?: 'KMB' | 'CTB' | 'GMB';
   routeId?: number;
   region?: string;
-  directions?: Array<{ seq: number; orig: string; dest: string }>;
+  directions?: Array<{ seq: number; orig: string; dest: string; bound?: string; serviceType?: string }>;
 }
 
 export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProps) {
@@ -62,7 +65,15 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
       }));
       setSegments(editSegments);
       setStep('segments');
+
+      // Trigger validation immediately using the local array (no race condition)
+      editSegments.forEach((seg, index) => {
+        if (seg.routeName) {
+          validateAndLoadStops(index, seg.routeType, seg.routeName);
+        }
+      });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editRoute]);
 
   // Validate route and load stops
@@ -80,11 +91,12 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
         // Try KMB first
         const kmbRoutes = await getKMBRouteInfo(routeName);
         if (kmbRoutes.length > 0) {
-          const route = kmbRoutes[0];
           const dirs = kmbRoutes.map((r, i) => ({
             seq: i + 1,
             orig: r.orig_tc,
             dest: r.dest_tc,
+            bound: r.bound,
+            serviceType: r.service_type,
           }));
           setValidations(prev => new Map(prev).set(index, {
             status: 'valid',
@@ -92,7 +104,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
             directions: dirs,
           }));
           // Load stops for first direction
-          await loadKMBStops(index, routeName, 'O');
+          await loadKMBStops(index, routeName, kmbRoutes[0].bound as 'I' | 'O', kmbRoutes[0].service_type);
           return;
         }
 
@@ -149,20 +161,8 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
     }
   }, []);
 
-  // Trigger validation when editing (after validateAndLoadStops is defined)
-  useEffect(() => {
-    if (editRoute && segments.length > 0) {
-      segments.forEach((seg, index) => {
-        if (seg.routeName) {
-          validateAndLoadStops(index, seg.routeType, seg.routeName);
-        }
-      });
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editRoute]);
-
-  const loadKMBStops = async (index: number, route: string, bound: 'I' | 'O') => {
-    const stops = await getKMBRouteStops(route, bound);
+  const loadKMBStops = async (index: number, route: string, bound: 'I' | 'O', serviceType: string = '1') => {
+    const stops = await getKMBRouteStops(route, bound, serviceType);
     const options: StopOption[] = await Promise.all(
       stops.map(async (s) => {
         const info = await getKMBStopInfo(s.stop);
@@ -170,6 +170,8 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
           id: s.stop,
           name: info?.name_tc || s.stop,
           seq: s.seq,
+          lat: info?.lat,
+          lng: info?.long,
         };
       })
     );
@@ -185,6 +187,8 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
           id: s.stop,
           name: info?.name_tc || s.stop,
           seq: s.seq,
+          lat: info?.lat,
+          lng: info?.long,
         };
       })
     );
@@ -252,8 +256,17 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
     const validation = validations.get(index);
     if (!validation) return;
 
+    // Reset selected stops when direction changes
+    const updated = [...segments];
+    updated[index] = { ...updated[index], fromStop: '', toStop: '', fromStopId: '', toStopId: '' };
+    setSegments(updated);
+
+    // Find the direction data
+    const dir = validation.directions?.find(d => d.seq === dirSeq);
+    if (!dir) return;
+
     if (validation.company === 'KMB') {
-      await loadKMBStops(index, seg.routeName, dirSeq === 1 ? 'O' : 'I');
+      await loadKMBStops(index, seg.routeName, (dir.bound || 'O') as 'I' | 'O', dir.serviceType || '1');
     } else if (validation.company === 'CTB') {
       await loadCTBStops(index, seg.routeName, dirSeq === 1 ? 'O' : 'I');
     } else if (validation.company === 'GMB' && validation.routeId) {
@@ -263,6 +276,24 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
 
   const handleSave = () => {
     let savedRoute: CommuteRoute | undefined;
+
+    // Helper: resolve stop coordinates
+    const getStopLocation = (seg: typeof segments[0], stopId: string, stopName: string): { lat: number; lng: number } => {
+      // MTR: look up from MTR_STATIONS
+      if (seg.routeType === 'mtr') {
+        const station = findStation(stopId) || findStation(stopName);
+        if (station) return { lat: station.lat, lng: station.lng };
+      }
+      // Bus/minibus: get coords from loaded stopsOptions
+      const stops = stopsOptions.get(segments.indexOf(seg));
+      if (stops) {
+        const found = stops.find(s => s.id === stopId || s.name === stopName);
+        if (found?.lat && found?.lng) {
+          return { lat: found.lat, lng: found.lng };
+        }
+      }
+      return { lat: 0, lng: 0 };
+    };
     
     if (editRoute) {
       const updatedRoute = {
@@ -282,14 +313,14 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
             id: seg.fromStopId || editRoute.segments[index]?.fromStop.id || `stop-from-${index}`,
             name: seg.fromStop,
             nameZh: seg.fromStop,
-            location: { lat: 0, lng: 0 },
+            location: getStopLocation(seg, seg.fromStopId, seg.fromStop),
             routes: [],
           },
           toStop: {
             id: seg.toStopId || editRoute.segments[index]?.toStop.id || `stop-to-${index}`,
             name: seg.toStop,
             nameZh: seg.toStop,
-            location: { lat: 0, lng: 0 },
+            location: getStopLocation(seg, seg.toStopId, seg.toStop),
             routes: [],
           },
         })),
@@ -315,14 +346,14 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
             id: seg.fromStopId || `stop-from-${index}`,
             name: seg.fromStop,
             nameZh: seg.fromStop,
-            location: { lat: 0, lng: 0 },
+            location: getStopLocation(seg, seg.fromStopId, seg.fromStop),
             routes: [],
           },
           toStop: {
             id: seg.toStopId || `stop-to-${index}`,
             name: seg.toStop,
             nameZh: seg.toStop,
-            location: { lat: 0, lng: 0 },
+            location: getStopLocation(seg, seg.toStopId, seg.toStop),
             routes: [],
           },
         })),
@@ -464,30 +495,64 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                       </div>
                       <div>
                         <label className="block text-xs text-gray-400 mb-1">路線號碼</label>
-                        <div className="relative">
-                          <input
-                            type="text"
+                        {seg.routeType === 'mtr' ? (
+                          <select
                             value={seg.routeName}
-                            onChange={(e) => updateSegment(index, 'routeName', e.target.value.toUpperCase())}
-                            placeholder="例：1A"
-                            className={getInputClasses(index)}
-                          />
-                          {validation?.status === 'checking' && (
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                              <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+                            onChange={(e) => {
+                              const lineCode = e.target.value;
+                              const updated = [...segments];
+                              updated[index] = { ...updated[index], routeName: lineCode, fromStop: '', toStop: '', fromStopId: '', toStopId: '' };
+                              setSegments(updated);
+                              if (lineCode) {
+                                // Load MTR line stations
+                                const stations = getLineStations(lineCode);
+                                const options = stations.map(s => ({
+                                  id: s.stationCode,
+                                  name: s.name_tc,
+                                  seq: 0,
+                                }));
+                                setStopsOptions(prev => new Map(prev).set(index, options));
+                                setValidations(prev => new Map(prev).set(index, { status: 'valid', company: undefined, directions: [] }));
+                              } else {
+                                setStopsOptions(prev => new Map(prev).set(index, []));
+                                setValidations(prev => new Map(prev).set(index, { status: 'idle' }));
+                              }
+                            }}
+                            className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="">選擇線路</option>
+                            {MTR_LINES.map(line => (
+                              <option key={line.code} value={line.code}>{line.name_tc}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <>
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={seg.routeName}
+                                onChange={(e) => updateSegment(index, 'routeName', e.target.value.toUpperCase())}
+                                placeholder="例：1A"
+                                className={getInputClasses(index)}
+                              />
+                              {validation?.status === 'checking' && (
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                                  <div className="w-4 h-4 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+                                </div>
+                              )}
+                              {validation?.status === 'valid' && (
+                                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-green-400">✓</div>
+                              )}
                             </div>
-                          )}
-                          {validation?.status === 'valid' && (
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 text-green-400">✓</div>
-                          )}
-                        </div>
-                        {validation?.status === 'valid' && validation.company && (
-                          <p className="text-xs text-green-400 mt-1">
-                            {validation.company === 'KMB' ? '九巴' : validation.company === 'CTB' ? '城巴' : '小巴'} ✓
-                          </p>
-                        )}
-                        {validation?.status === 'invalid' && (
-                          <p className="text-xs text-red-400 mt-1">找不到此路線</p>
+                            {validation?.status === 'valid' && validation.company && (
+                              <p className="text-xs text-green-400 mt-1">
+                                {validation.company === 'KMB' ? '九巴' : validation.company === 'CTB' ? '城巴' : '小巴'} ✓
+                              </p>
+                            )}
+                            {validation?.status === 'invalid' && (
+                              <p className="text-xs text-red-400 mt-1">找不到此路線</p>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

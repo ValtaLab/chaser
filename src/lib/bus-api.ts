@@ -109,12 +109,18 @@ export async function getKMBStopETA(
   stopId: string,
   route?: string
 ): Promise<BusETA[]> {
-  let url = `${KMB_ETA_BASE}/stop-eta/${stopId}`;
-  if (route) url += `/${route}`;
+  // KMB ETA API route filter is broken — always fetch all, filter client-side
+  const url = `${KMB_ETA_BASE}/stop-eta/${stopId}`;
   
   const res = await fetch(url);
   const data = await res.json();
-  return data.data || [];
+  const etas: BusETA[] = data.data || [];
+  
+  // Filter by route client-side if specified
+  if (route) {
+    return etas.filter(e => e.route.toUpperCase() === route.toUpperCase());
+  }
+  return etas;
 }
 
 export async function getCitybusStopETA(
@@ -152,13 +158,11 @@ export async function getStopETA(
   const now = new Date();
 
   return rawETAs
-    .filter(eta => eta.eta) // Only include ETAs with valid time
     .map(eta => {
-      const etaTime = new Date(eta.eta);
-      const minutesAway = Math.max(
-        0,
-        Math.round((etaTime.getTime() - now.getTime()) / 60000)
-      );
+      const etaTime = eta.eta ? new Date(eta.eta) : null;
+      const minutesAway = etaTime
+        ? Math.max(0, Math.round((etaTime.getTime() - now.getTime()) / 60000))
+        : -1;  // -1 = no valid time (e.g. "最後班次已過")
       return {
         company: company,
         route: eta.route,
