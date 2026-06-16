@@ -659,8 +659,27 @@ export default function TrackingView({
 
       // Calculate route progress using enriched coordinates
       const enriched = enrichedRouteRef.current;
-      const origin = enriched?.origin || route.segments[0]?.fromStop.location;
-      const destination = enriched?.destination || route.segments[route.segments.length - 1]?.toStop.location;
+      let origin = enriched?.origin;
+      let destination = enriched?.destination;
+      
+      // Fallback: crawl segments to find first/last valid non-zero coordinates
+      if (!origin || typeof origin.lat !== 'number' || origin.lat === 0) {
+        for (const seg of route.segments) {
+          if (seg.fromStop.location && typeof seg.fromStop.location.lat === 'number' && seg.fromStop.location.lat !== 0) {
+            origin = seg.fromStop.location;
+            break;
+          }
+        }
+      }
+      if (!destination || typeof destination.lat !== 'number' || destination.lat === 0) {
+        for (let i = route.segments.length - 1; i >= 0; i--) {
+          const seg = route.segments[i];
+          if (seg.toStop.location && typeof seg.toStop.location.lat === 'number' && seg.toStop.location.lat !== 0) {
+            destination = seg.toStop.location;
+            break;
+          }
+        }
+      }
       if (!origin || !destination) {
         addDebug('📊 progress: no origin/destination');
         return;
