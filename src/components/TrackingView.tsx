@@ -880,7 +880,30 @@ export default function TrackingView({
           <div className="absolute bottom-20 left-0 w-[300px] max-h-[250px] bg-black/90 backdrop-blur-xl rounded-xl border border-yellow-500/30 overflow-hidden" style={{ zIndex: 1003 }}>
             <div className="flex items-center justify-between px-3 py-1.5 border-b border-white/10">
               <span className="text-[10px] text-yellow-400 font-medium">Debug Logs</span>
-              <button onClick={() => setDebugLogs([])} className="text-[10px] text-gray-500 hover:text-white">Clear</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const text = debugLogs.join('\n');
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(text).catch(() => {});
+                    } else {
+                      // Fallback for older browsers / iOS PWA
+                      const ta = document.createElement('textarea');
+                      ta.value = text;
+                      ta.style.position = 'fixed';
+                      ta.style.opacity = '0';
+                      document.body.appendChild(ta);
+                      ta.select();
+                      document.execCommand('copy');
+                      document.body.removeChild(ta);
+                    }
+                  }}
+                  className="text-[10px] text-gray-500 hover:text-white"
+                >
+                  複製
+                </button>
+                <button onClick={() => setDebugLogs([])} className="text-[10px] text-gray-500 hover:text-white">Clear</button>
+              </div>
             </div>
             <div className="overflow-y-auto max-h-[220px] p-2 space-y-0.5">
               {debugLogs.length === 0 ? (

@@ -2,8 +2,8 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-06-16T13:00:00+08:00
-last_version: ios-pwa-notification-fix-v2
+last_deploy: 2026-06-16T13:30:00+08:00
+last_version: ios-pwa-notification-fix-v3
 last_update_by: HermesBPi
 ---
 
