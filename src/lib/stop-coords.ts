@@ -185,7 +185,8 @@ async function findBusStopCoordsByName(
         if (!infoRes.ok) continue;
         const info = await infoRes.json();
         const infoData = info.data;
-        if (infoData && (infoData.name_tc === stopName || infoData.name_en === stopName)) {
+        if (infoData && (infoData.name_tc === stopName || infoData.name_en === stopName ||
+            infoData.name_tc?.startsWith(stopName) || infoData.name_en?.startsWith(stopName))) {
           return { lat: infoData.lat, lng: infoData.long || infoData.lng };
         }
       }
