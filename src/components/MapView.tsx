@@ -5,6 +5,7 @@ import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from '
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import type { CommuteRoute, Location } from '@/types';
+import { getMTRLineName } from '@/lib/mtr-api';
 
 // ─── FitBounds: auto-zoom to show all route polylines ───────────────
 function FitBounds({ points }: { points: Location[] }) {
@@ -89,7 +90,7 @@ export default function MapView({
       if (transferLoc && (transferLoc.lat !== 0 || transferLoc.lng !== 0)) {
         markers.push({
           location: transferLoc,
-          label: `🔄 轉車: ${current.toStop.nameZh || current.toStop.name} → ${next.route.name}`,
+          label: `🔄 轉車: ${current.toStop.nameZh || current.toStop.name} → ${next.route.type === 'mtr' ? getMTRLineName(next.route.name) : next.route.name}`,
         });
       }
     }
@@ -165,7 +166,7 @@ export default function MapView({
             <Popup>
               <span className="font-medium">🟢 上車: {seg.fromStop.nameZh || seg.fromStop.name}</span>
               <br />
-              <span className="text-xs text-gray-500">{seg.route.name}</span>
+              <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
             </Popup>
           </CircleMarker>
         );
@@ -191,7 +192,7 @@ export default function MapView({
             <Popup>
               <span className="font-medium">🔴 落車: {seg.toStop.nameZh || seg.toStop.name}</span>
               <br />
-              <span className="text-xs text-gray-500">{seg.route.name}</span>
+              <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
             </Popup>
           </CircleMarker>
         );

@@ -2,15 +2,15 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-06-11T17:30:00+08:00
-last_version: smart-route-v1
+last_deploy: 2026-06-16T01:30:00+08:00
+last_version: ios-notification-crash-fix-v1
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
 
-## 🚀 最新狀態 (2026-06-11)
-**版本:** `smart-route-v1` | **部署時間:** 17:30 HKT | **狀態:** 運行中  
+## 🚀 最新狀態 (2026-06-16)
+**版本:** `ios-notification-crash-fix-v1` | **部署時間:** ~01:30 HKT | **狀態:** 運行中  
 **部署地址:** https://master.chaser-6ta.pages.dev
 
 ### 核心功能
@@ -41,6 +41,77 @@ last_update_by: HermesBPi
 ---
 
 ## 📝 變更歷史
+
+### 2026-06-16 | iOS PWA 通知 Crash 修復 + PushNotification try-catch
+**版本:** ios-notification-crash-fix-v1
+
+**問題：** 喺 iOS PWA standalone mode，開啓推播通知 toggle 後進入 tracking view 會出現空白畫面（React component tree crash）。
+
+**Root cause：**
+1. `PushNotification.tsx` 嘅 `toggle()` handler 直接 call `Notification.requestPermission()` 但冇 try-catch — iOS PWA 上佢會 throw error，async event handler 嘅 unhandled rejection 會 crash 成個 app
+2. TrackingView 入面嘅 notification effects 同樣冇 try-catch，任何 `Notification` API 嘅錯誤都會 propagate 到 React error boundary
+
+**修復：**
+1. **PushNotification.tsx** — `toggle()` handler 包 try-catch
+2. **TrackingView.tsx** — 所有 notification 相關 code 包 try-catch：
+   - `sendNotification()` helper 最外層
+   - Progress notification effect（持續顯示通知卡片）
+   - Proximity notification effect（到站提醒）
+   - Permission request effect（開始旅程時）
+3. **Build fix** — try-catch 包 `sendNotification()` 時遺失咗 function closing `}`，修復後 clean build
+
+**Service Worker：** Cache 版本 v4 → v5，強制清除舊 cache
+
+### 2026-06-15 | Debug Panel 合併 + 通知修復 + UI 重構
+**版本:** notification-fix-v4
+
+**Debug Panel 合併：**
+1. **移除 MainApp debug panel** — 白底 🐛 button 移除，`debugLogs`/`showDebug` state 清除
+2. **保留 TrackingView debug panel** — 黃色 🐛 button，黑底黃邊 panel
+3. **位置調整** — debug button 由 `bottom-20` 移到 `bottom-32`，避開 SmartJourneyTimeline
+
+**通知功能修復：**
+1. **PushNotification.tsx**：
+   - Permission denied 時彈 alert 提示用戶去瀏覽器設定允許
+   - iOS detection 支援 iPadOS desktop mode（`navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1`）
+   - iOS 未加至主屏幕時顯示「iOS 需加至主屏幕」
+2. **TrackingView.tsx**：
+   - 移除自動 `requestPermission()`（時機差）
+   - 開始旅程時自動 request permission（時機啱）
+   - iOS PWA 用 `ServiceWorkerRegistration.showNotification()` 代替 `new Notification()`（後者喺 PWA standalone mode 唔支援）
+   - 加 `sendNotification()` helper function 自動檢測平台
+
+**路線進度通知（Persistent Notification）：**
+1. **進度計算** — 用 haversine 計算用戶位置相對起點/終點嘅百分比
+2. **通知內容**：
+   ```
+   趕車 · 60%
+   ▓▓▓▓▓▓░░░░
+   富蝶總站 → 銅鑼灣
+   ```
+3. **更新機制** — 用 `tag: 'journey-progress'` 更新同一個通知（唔會彈新通知）
+4. **Silent mode** — `silent: true` 唔會有聲音
+5. **Zero coordinates 修復** — 用 `enrichSegmentWithCoords` runtime 修復舊路線嘅 `{lat: 0, lng: 0}` 座標
+
+**UI 重構：**
+1. **ETA panel** — 由右上 `right-3` 移去左上 `left-3`，`top-14`（返回鍵下面）
+2. **ETA 精簡** — 每個 segment 只顯示 1 個 ETA（最近嗰班），寬度收窄至 180px
+3. **智能推薦** — 由大卡片改為細 badge（`🚀 EAL 快 29min`），tap 展開完整卡片
+4. **智能推薦位置** — 由 `top-3 left-14` 移到 `bottom-40 right-3`（時間條上方）
+5. **時間條壓縮** — 字體 10px → 9px，padding 收窄，arrows 10px → 8px
+6. **時間條寬度** — 加 `max-w-[calc(100%-24px)]` 確保唔超出屏幕
+
+**156031 分鐘 bug 修復：**
+1. **smart-route.ts**：
+   - `estimateRideTime` 加 zero coordinates guard（`{lat: 0, lng: 0}` → 30min 預設）
+   - `calculateConfiguredRouteTime` 加 zero coordinates guard（`{lat: 0, lng: 0}` → 2min 預設）
+
+**Service Worker 升級：**
+- Cache version v3 → v4，force clear 舊 cache
+
+**已知問題：**
+- iOS PWA 通知需要用戶手動開啟（加至主屏幕 → 設定 → 通知）
+- 舊路線（2026-06-12 之前創建）可能冇座標，需要 runtime enrich
 
 ### 2026-06-10 | 旅程卡片整合 + GPS 追蹤簡化
 **版本:** journey-card-integration-v1
@@ -300,8 +371,10 @@ last_update_by: HermesBPi
 
 ---
 
-## ⚠️ 已知問題
+| ⚠️ 已知問題
 
 1. **iOS Safari 通知限制** — `Notification` API 喺純 Safari 瀏覽器唔可用，必須將 app 加至主屏幕（PWA 模式）先有推播通知。設定頁已顯示「需加至主屏幕」提示。
 2. **MTR 軌道幾何** — 港鐵線用站坐標直線連接，唔跟實際軌道弧線。受限於冇公開軌道數據，呢個係最好嘅近似。
 3. **通知權限** — `Notification.permission` 一旦 denied 就無法由 JS 恢復，用戶需去瀏覽器設定手動允許。
+4. **舊路線座標** — 2026-06-12 之前創建嘅路線可能冇巴士站座標（`{lat: 0, lng: 0}`），已用 `enrichSegmentWithCoords` runtime 修復，但需要用戶重新開旅程先會生效。
+5. **Service Worker cache** — iOS PWA 嘅 SW cache 好 persistent，uninstall app 唔會清到。如要強制更新，需去 **設定 → Safari → 進階 → 網站資料** 刪除 domain 資料。

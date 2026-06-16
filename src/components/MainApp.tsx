@@ -15,11 +15,12 @@ import UserMenu from './UserMenu';
 import Settings from './Settings';
 import { setOnUpdateAvailable } from './ServiceWorker注册';
 import type { CommuteRoute } from '@/types';
+import { Timer, Home, Plus, MapPin, Settings as SettingsIcon, Cloud, RefreshCw, ChevronRight } from 'lucide-react';
 
 const NAV_ITEMS = [
-  { key: 'home' as const, icon: '🏠', label: '首頁' },
-  { key: 'setup' as const, icon: '➕', label: '新增' },
-  { key: 'tracking' as const, icon: '📍', label: '追蹤' },
+  { key: 'home' as const, icon: 'Home', label: '首頁' },
+  { key: 'setup' as const, icon: 'Plus', label: '新增' },
+  { key: 'tracking' as const, icon: 'MapPin', label: '追蹤' },
 ];
 
 export default function MainApp() {
@@ -43,14 +44,10 @@ export default function MainApp() {
   const [editingRoute, setEditingRoute] = useState<CommuteRoute | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const [showDebug, setShowDebug] = useState(false);
   const [viewKey, setViewKey] = useState(0);
   const addDebug = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
-    const line = `${ts} ${msg}`;
-    console.log(line);
-    setDebugLogs(prev => [...prev.slice(-30), line]);
+    console.log(`${ts} ${msg}`);
   }, []);
 
   const prevView = useRef(currentView);
@@ -96,7 +93,7 @@ export default function MainApp() {
       addDebug(`❌ sync exception: ${e}`);
     }
     setSyncing(false);
-  }, [user, token, authenticatedFetch, setRoutes, addDebug]);
+  }, [user, token, authenticatedFetch, setRoutes]);
 
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -152,7 +149,7 @@ export default function MainApp() {
       setIsRefreshing(false);
     }
     setPullDistance(0);
-  }, [pullDistance, isRefreshing, syncFromCloud, addDebug]);
+  }, [pullDistance, isRefreshing, syncFromCloud]);
 
   useEffect(() => {
     addDebug(`🔑 auth: user=${!!user} token=${!!token} loading=${isLoading}`);
@@ -189,7 +186,7 @@ export default function MainApp() {
     } catch (e) {
       addDebug(`❌ save exception: ${e}`);
     }
-  }, [user, token, authenticatedFetch, addDebug]);
+  }, [user, token, authenticatedFetch]);
 
   const deleteFromCloud = useCallback(async (routeId: string) => {
     if (!user || !token) return;
@@ -229,7 +226,7 @@ export default function MainApp() {
 
   return (
     <div 
-      className="min-h-screen bg-gradient-to-br from-slate-100 via-blue-50 to-slate-100"
+      className="min-h-screen bg-[#F8F9FA]"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -269,11 +266,11 @@ export default function MainApp() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
-                <span className="text-lg">🏃</span>
+                <Timer size={20} className="text-white" strokeWidth={2.5} />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">趕車</h1>
-                <p className="text-[10px] text-gray-400 font-medium tracking-wider uppercase">Chaser</p>
+                <p className="text-[9px] text-gray-300 font-medium tracking-[0.15em] uppercase">Chaser</p>
               </div>
             </div>
             <div className="flex items-center gap-1.5">
@@ -284,7 +281,7 @@ export default function MainApp() {
                   className="w-9 h-9 bg-white border border-gray-200 flex items-center justify-center rounded-xl text-sm shadow-sm transition-all active:scale-90"
                   title="同步雲端路線"
                 >
-                  <span className={`inline-block transition-transform ${syncing ? 'animate-spin' : ''}`}>☁️</span>
+                  <Cloud size={18} className={`text-gray-500 transition-transform ${syncing ? 'animate-spin' : ''}`} />
                 </button>
               )}
               <PushNotification />
@@ -294,7 +291,7 @@ export default function MainApp() {
                 onClick={() => navigateTo(currentView === 'settings' ? 'home' : 'settings')}
                 className="w-9 h-9 bg-white border border-gray-200 flex items-center justify-center rounded-xl text-sm shadow-sm transition-all active:scale-90"
               >
-                {currentView === 'settings' ? '✕' : '⚙️'}
+                {currentView === 'settings' ? <ChevronRight size={18} className="text-gray-500" /> : <SettingsIcon size={18} className="text-gray-500" />}
               </button>
             </div>
           </div>
@@ -306,20 +303,20 @@ export default function MainApp() {
         {currentView === 'home' && (
           <div key={`home-${viewKey}`} className="page-enter space-y-5">
             {/* Quick Stats */}
-            <div className="grid grid-cols-3 gap-2.5">
-              <div className="bg-white border border-blue-100 rounded-2xl p-3.5 text-center shadow-sm animate-scale-in stagger-1">
-                <p className="text-2xl font-bold text-blue-600">{routes.length}</p>
-                <p className="text-[10px] text-gray-400 mt-1 font-medium">已存路線</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="bg-white border border-gray-100 rounded-2xl p-4 text-center shadow-sm hover:shadow-md transition-shadow">
+                <p className="text-3xl font-extrabold text-blue-600 leading-none">{routes.length}</p>
+                <p className="text-[11px] text-gray-500 mt-2 font-medium tracking-wide">已存路線</p>
               </div>
-              <div className="bg-white border border-green-100 rounded-2xl p-3.5 text-center shadow-sm animate-scale-in stagger-2">
-                <p className="text-2xl font-bold text-green-600">
+              <div className="bg-white border border-gray-100 rounded-2xl p-4 text-center shadow-sm hover:shadow-md transition-shadow">
+                <p className="text-3xl font-extrabold text-emerald-600 leading-none">
                   {currentJourney ? '1' : '0'}
                 </p>
-                <p className="text-[10px] text-gray-400 mt-1 font-medium">進行中</p>
+                <p className="text-[11px] text-gray-500 mt-2 font-medium tracking-wide">進行中</p>
               </div>
-              <div className="bg-white border border-gray-200 rounded-2xl p-3.5 text-center shadow-sm animate-scale-in stagger-3">
-                <p className="text-2xl font-bold text-gray-300">0</p>
-                <p className="text-[10px] text-gray-400 mt-1 font-medium">今日旅程</p>
+              <div className="bg-white border border-gray-100 rounded-2xl p-4 text-center shadow-sm hover:shadow-md transition-shadow">
+                <p className="text-3xl font-extrabold text-amber-500 leading-none">0</p>
+                <p className="text-[11px] text-gray-500 mt-2 font-medium tracking-wide">今日旅程</p>
               </div>
             </div>
 
@@ -331,24 +328,25 @@ export default function MainApp() {
 
             {/* Routes List */}
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">我的路線</h3>
+              <div className="flex items-center justify-between px-1">
+                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-[0.12em]">我的路線</h3>
                 {routes.length > 0 && (
-                  <span className="text-xs text-gray-300">{routes.length} 條</span>
+                  <span className="text-[11px] text-gray-300 font-medium">{routes.length}</span>
                 )}
               </div>
               {routes.length === 0 ? (
-                <div className="bg-white border border-gray-200 rounded-2xl p-8 text-center shadow-md animate-scale-in">
-                  <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center mb-4 animate-float">
-                    <span className="text-4xl">🚇</span>
+                <div className="bg-white border border-gray-100 rounded-2xl p-10 text-center shadow-sm animate-scale-in">
+                  <div className="w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-50 flex items-center justify-center mb-5">
+                    <MapPin size={36} className="text-blue-400" strokeWidth={1.5} />
                   </div>
-                  <p className="text-gray-500 text-sm font-medium">尚未設定路線</p>
-                  <p className="text-gray-400 text-xs mt-1">建立你的第一條通勤路線</p>
+                  <h3 className="text-lg font-bold text-gray-800 mb-1">尚未設定路線</h3>
+                  <p className="text-sm text-gray-400 mb-6">建立你的第一條通勤路線，開始追蹤即時交通</p>
                   <button
                     onClick={() => navigateTo('setup')}
-                    className="btn-primary mt-5 text-sm"
+                    className="btn-primary inline-flex items-center gap-2 text-sm px-6 py-3"
                   >
-                    建立路線
+                    <Plus size={16} strokeWidth={2.5} />
+                    立即建立路線
                   </button>
                 </div>
               ) : (
@@ -453,27 +451,6 @@ export default function MainApp() {
         )}
       </main>
 
-      {/* Debug Panel */}
-      <div className="fixed bottom-20 left-0 right-0 z-50 max-w-md mx-auto pointer-events-none">
-        <button
-          onClick={() => setShowDebug(!showDebug)}
-          className="ml-auto mr-3 mb-1 bg-white border border-gray-200 text-gray-500 text-[10px] px-2.5 py-1 rounded-lg shadow-sm pointer-events-auto transition-all active:scale-95 font-mono"
-        >
-          🐛 {showDebug ? '收起' : debugLogs.length}
-        </button>
-        {showDebug && (
-          <div className="mx-3 mb-2 bg-white border border-gray-200 rounded-xl shadow-lg p-3 max-h-48 overflow-y-auto pointer-events-auto">
-            {debugLogs.length === 0 ? (
-              <p className="text-gray-400 text-xs">No logs yet</p>
-            ) : (
-              debugLogs.map((log, i) => (
-                <p key={i} className="text-[10px] font-mono text-green-600 leading-relaxed whitespace-nowrap overflow-x-auto">{log}</p>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40">
         <div className="bg-white/95 backdrop-blur-xl border-t border-gray-200 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
@@ -490,10 +467,12 @@ export default function MainApp() {
                       isActive ? 'active' : ''
                     }`}
                   >
-                    <span className={`text-lg transition-all ${
-                      isActive ? 'scale-110' : 'grayscale opacity-40'
+                    <span className={`transition-all flex items-center justify-center ${
+                      isActive ? 'scale-110 text-blue-600' : 'text-gray-400'
                     }`}>
-                      {item.icon}
+                      {item.key === 'home' && <Home size={20} strokeWidth={isActive ? 2.5 : 1.5} />}
+                      {item.key === 'setup' && <Plus size={20} strokeWidth={isActive ? 2.5 : 1.5} />}
+                      {item.key === 'tracking' && <MapPin size={20} strokeWidth={isActive ? 2.5 : 1.5} />}
                     </span>
                     <span className={`text-[10px] font-medium transition-colors ${
                       isActive ? 'text-blue-600 font-semibold' : 'text-gray-400'

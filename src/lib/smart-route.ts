@@ -104,18 +104,23 @@ async function calculateConfiguredRouteTime(configuredRoute: {
   etas: Array<{ route: string; minutesAway: number }>;
 }): Promise<number> {
   let totalTime = 0;
+  const isZero = (loc: Location) => loc.lat === 0 && loc.lng === 0;
 
   for (let i = 0; i < configuredRoute.segments.length; i++) {
     const seg = configuredRoute.segments[i];
     const eta = configuredRoute.etas[i];
 
     // Walk time (from previous location or current location)
-    const walkTime = i === 0 ? 0 : Math.ceil(
-      haversineMeters(
-        configuredRoute.segments[i - 1].toStop.location,
-        seg.fromStop.location
-      ) / 80
-    );
+    let walkTime = 0;
+    if (i > 0) {
+      const prevLoc = configuredRoute.segments[i - 1].toStop.location;
+      const currLoc = seg.fromStop.location;
+      if (!isZero(prevLoc) && !isZero(currLoc)) {
+        walkTime = Math.ceil(haversineMeters(prevLoc, currLoc) / 80);
+      } else {
+        walkTime = 2;  // Default walk time
+      }
+    }
 
     // Wait time
     const waitTime = eta?.minutesAway || 5;
@@ -256,6 +261,11 @@ async function findBusMTRComboOptions(
 function estimateRideTime(segment: { route: { type: string }; fromStop: { location: Location }; toStop: { location: Location } }): number {
   if (segment.route.type === 'mtr') {
     return 10;  // Default MTR ride time
+  }
+  // Guard against zero coordinates
+  const isZero = (loc: Location) => loc.lat === 0 && loc.lng === 0;
+  if (isZero(segment.fromStop.location) || isZero(segment.toStop.location)) {
+    return 30;  // Default bus ride time
   }
   // Bus: estimate from distance
   const distKm = haversineMeters(segment.fromStop.location, segment.toStop.location) / 1000;

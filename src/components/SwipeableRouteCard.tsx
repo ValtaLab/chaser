@@ -2,6 +2,8 @@
 
 import { useState, useRef, useCallback } from 'react';
 import type { CommuteRoute } from '@/types';
+import { Building, Home } from 'lucide-react';
+import { getMTRLineName } from '@/lib/mtr-api';
 
 interface SwipeableRouteCardProps {
   route: CommuteRoute;
@@ -22,8 +24,7 @@ const DIRECTION_STYLES = {
     btn: 'from-blue-600 to-blue-500',
     btnHover: 'from-blue-500 to-blue-400',
     badge: 'badge-blue',
-    label: '🏢 返工',
-    icon: '🏢',
+    label: '返工',
   },
   to_home: {
     gradient: 'from-amber-50 to-amber-100/50',
@@ -33,8 +34,7 @@ const DIRECTION_STYLES = {
     btn: 'from-amber-600 to-amber-500',
     btnHover: 'from-amber-500 to-amber-400',
     badge: 'badge-amber',
-    label: '🏠 放工',
-    icon: '🏠',
+    label: '放工',
   },
 } as const;
 
@@ -198,8 +198,9 @@ export default function SwipeableRouteCard({ route, onStart, onEdit, onDelete, i
                   <h3 className="font-semibold text-gray-900 truncate text-[15px] font-semibold">{route.name}</h3>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className={`badge ${dir.badge} text-[10px]`}>
-                    {dir.icon} {dir.label}
+                  <span className={`badge ${dir.badge} text-[10px] inline-flex items-center gap-1`}>
+                    {route.direction === 'to_work' ? <Building size={11} strokeWidth={2.5} /> : <Home size={11} strokeWidth={2.5} />}
+                    {dir.label}
                   </span>
                   <span className="text-[10px] text-gray-300">•</span>
                   <span className="text-[10px] text-gray-400">{route.segments.length} 個路段</span>
@@ -241,7 +242,7 @@ export default function SwipeableRouteCard({ route, onStart, onEdit, onDelete, i
                   <div key={seg.id} className="flex items-center gap-1.5">
                     <span className="inline-flex items-center gap-1 bg-gray-50 border border-gray-100 px-2 py-1 rounded-lg text-[11px] text-gray-600">
                       <span className="text-xs">{TRANSPORT_ICONS[seg.route.type] || '🚍'}</span>
-                      <span className="font-medium">{seg.route.name}</span>
+                      <span className="font-medium">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
                     </span>
                     {index < route.segments.length - 1 && (
                       <svg className="w-3 h-3 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">

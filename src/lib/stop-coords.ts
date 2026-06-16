@@ -97,7 +97,7 @@ function getSegmentCompany(segment: CommuteSegment): 'KMB' | 'CTB' | null {
  */
 export async function enrichSegmentWithCoords(segment: CommuteSegment): Promise<CommuteSegment> {
   const isZero = (loc: { lat: number; lng: number }) =>
-    loc.lat === 0 && loc.lng === 0;
+    !loc || loc.lat == null || loc.lng == null || (loc.lat === 0 && loc.lng === 0);
 
   const enriched = { ...segment };
 

@@ -15,7 +15,7 @@ import {
   getKMBRouteStops, getKMBStopInfo,
   getCitybusRouteStops, getCitybusStopInfo,
 } from '@/lib/bus-api';
-import { getMTRLineCoords, getLineStations, findStation } from '@/lib/mtr-api';
+import { getMTRLineCoords, getLineStations, findStation, getMTRLineName } from '@/lib/mtr-api';
 
 // ─── MTR direction filter: is this train going towards our destination? ──
 function isSameMTRDirection(lineCode: string, fromStationCode: string, destStationCode: string, trainTerminal: string): boolean {
@@ -37,10 +37,11 @@ function isSameMTRDirection(lineCode: string, fromStationCode: string, destStati
   }
 }
 import { snapToRoads, haversineMeters } from '@/lib/road-snap';
+import { enrichSegmentWithCoords } from '@/lib/stop-coords';
 import SmartJourneyTimeline from './SmartJourneyTimeline';
 import AlternativeRouteCard from './AlternativeRouteCard';
 import SmartRouteCard from './SmartRouteCard';
-import type { CommuteRoute, Location, SmartRouteRecommendation } from '@/types';
+import type { CommuteRoute, CommuteSegment, Location, SmartRouteRecommendation } from '@/types';
 
 // ─── Helper: find correct direction and get all stop coordinates ─────
 async function findDirectionWithStops(
@@ -129,6 +130,41 @@ async function findDirectionWithStops(
   return null;
 }
 
+// ─── Cross-platform notification helper ──────────────────────────────
+// iOS PWA doesn't support `new Notification()` constructor.
+// Use ServiceWorkerRegistration.showNotification() instead.
+function sendNotification(title: string, options: { body: string; tag: string; silent?: boolean }) {
+  try {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+
+    const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    if (isStandalone && isIOS) {
+      // iOS PWA: use Service Worker showNotification
+      navigator.serviceWorker?.getRegistration()?.then(reg => {
+        reg?.showNotification(title, {
+          body: options.body,
+          tag: options.tag,
+          silent: options.silent ?? false,
+          icon: '/icon-192x192.png',
+        });
+      }).catch(() => {/* silent fail */});
+    } else {
+      // Desktop Safari / Chrome: use Notification constructor
+      try {
+        new Notification(title, {
+          body: options.body,
+          tag: options.tag,
+          silent: options.silent ?? false,
+          icon: '/icon-192x192.png',
+        });
+      } catch {/* silent fail */}
+    }
+  } catch {/* silent fail */}
+}
+
 // ─── Dynamically import entire map (avoids SSR + leaflet CSS issues) ──
 const MapView = dynamic(() => import('./MapView'), {
   ssr: false,
@@ -175,12 +211,56 @@ export default function TrackingView({
   const [journeyEstimate, setJourneyEstimate] = useState<SmartRouteRecommendation | null>(null);
   const [alternatives, setAlternatives] = useState<SegmentAlternatives[]>([]);
   const [smartRouteRec, setSmartRouteRec] = useState<SmartRouteRec | null>(null);
+  const [showSmartRouteDetail, setShowSmartRouteDetail] = useState(false);
   const [showTimelineDetail, setShowTimelineDetail] = useState(false);
+  const enrichedRouteRef = useRef<{ origin: Location; destination: Location } | null>(null);
   const addDebug = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
     const line = `${ts} ${msg}`;
     console.log(line);
     setDebugLogs(prev => [...prev.slice(-30), line]);
+  }, []);
+
+  // ── Enrich segments with coordinates (fix zero-coord routes) ───────
+  useEffect(() => {
+    // Fire-and-forget: enrich coordinates in background, don't block UI
+    (async () => {
+      try {
+        const segments = await Promise.all(
+          route.segments.map(seg => enrichSegmentWithCoords(seg))
+        );
+        const origin = segments[0]?.fromStop.location;
+        const dest = segments[segments.length - 1]?.toStop.location;
+        if (origin && dest && (origin.lat !== 0 || dest.lat !== 0)) {
+          enrichedRouteRef.current = { origin, destination: dest };
+          addDebug(`🗺️ enriched coords: origin=(${origin.lat.toFixed(4)},${origin.lng.toFixed(4)})`);
+        }
+      } catch {
+        // Silent fail — progress notification just won't work for old routes
+      }
+    })();
+  }, [route.segments]);
+
+  // ── Request notification permission on journey start ─────────────
+  useEffect(() => {
+    try {
+      // Skip on iOS PWA — Notification constructor not supported
+      const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      if (isStandalone && isIOS) {
+        addDebug('🔔 iOS PWA: skip Notification (use showNotification instead)');
+        return;
+      }
+      if ('Notification' in window && Notification.permission === 'default') {
+        addDebug('🔔 requesting notification permission...');
+        Notification.requestPermission()
+          .then(result => addDebug(`🔔 permission: ${result}`))
+          .catch(err => addDebug(`🔔 permission error: ${err}`));
+      }
+    } catch (err) {
+      addDebug(`🔔 notification setup error: ${err}`);
+    }
   }, []);
 
   // ── Live location tracking (runs inside tracking view) ───────────
@@ -391,13 +471,13 @@ export default function TrackingView({
             );
             return {
               segmentId: seg.id,
-              label: `${seg.route.name} · ${seg.fromStop.nameZh || seg.fromStop.name}`,
+              label: `${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name} · ${seg.fromStop.nameZh || seg.fromStop.name}`,
               etas,
             };
           } catch {
             return {
               segmentId: seg.id,
-              label: `${seg.route.name} · ${seg.fromStop.nameZh || seg.fromStop.name}`,
+              label: `${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name} · ${seg.fromStop.nameZh || seg.fromStop.name}`,
               etas: [],
             };
           }
@@ -496,59 +576,119 @@ export default function TrackingView({
   // ── Proximity-based arrival notifications ─────────────────────
   const notifiedStations = useRef<Set<string>>(new Set());
 
-  // Request notification permission on mount
-  useEffect(() => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      Notification.requestPermission();
-    }
-  }, []);
-
   // Check proximity to boarding stations and notify if ETA <= 5 min
   useEffect(() => {
-    if (!liveLocation || segmentETAs.length === 0) return;
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
-    // Respect user preference in settings
-    if (localStorage.getItem('chaser-notifications-enabled') === 'false') return;
+    try {
+      if (!liveLocation || segmentETAs.length === 0) return;
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      // Respect user preference in settings
+      if (localStorage.getItem('chaser-notifications-enabled') === 'false') return;
 
-    for (const segETA of segmentETAs) {
-      const segData = route.segments.find(s => s.id === segETA.segmentId);
-      if (!segData) continue;
+      for (const segETA of segmentETAs) {
+        const segData = route.segments.find(s => s.id === segETA.segmentId);
+        if (!segData) continue;
 
-      const stopLoc = segData.fromStop.location;
-      if (!stopLoc || (stopLoc.lat === 0 && stopLoc.lng === 0)) continue;
+        const stopLoc = segData.fromStop.location;
+        if (!stopLoc || (stopLoc.lat === 0 && stopLoc.lng === 0)) continue;
 
-      const distance = haversineMeters(liveLocation, stopLoc);
-      if (distance > 500) continue;
+        const distance = haversineMeters(liveLocation, stopLoc);
+        if (distance > 500) continue;
 
-      // Find the soonest valid ETA for this segment
-      const validEtas = segETA.etas.filter(e => e.minutesAway >= 0);
-      if (validEtas.length === 0) continue;
-      const minEta = validEtas[0].minutesAway;
-      if (minEta > 5) continue;
+        // Find the soonest valid ETA for this segment
+        const validEtas = segETA.etas.filter(e => e.minutesAway >= 0);
+        if (validEtas.length === 0) continue;
+        const minEta = validEtas[0].minutesAway;
+        if (minEta > 5) continue;
 
-      // Deduplicate: each station notifies only once per journey
-      const notifyKey = `${segETA.segmentId}-${segData.fromStop.id}`;
-      if (notifiedStations.current.has(notifyKey)) continue;
-      notifiedStations.current.add(notifyKey);
+        // Deduplicate: each station notifies only once per journey
+        const notifyKey = `${segETA.segmentId}-${segData.fromStop.id}`;
+        if (notifiedStations.current.has(notifyKey)) continue;
+        notifiedStations.current.add(notifyKey);
 
-      const emoji = segData.route.type === 'mtr' ? '🚇' : '🚌';
-      const stopName = segData.fromStop.nameZh || segData.fromStop.name;
-      const title = `${emoji} ${segData.route.name} 即將到站`;
-      const body = `${stopName} — ${minEta === 0 ? '到站中' : `${minEta} 分鐘後到站`}，距離你 ${Math.round(distance)} 米`;
+        const emoji = segData.route.type === 'mtr' ? '🚇' : '🚌';
+        const stopName = segData.fromStop.nameZh || segData.fromStop.name;
+        const title = `${emoji} ${segData.route.name} 即將到站`;
+        const body = `${stopName} — ${minEta === 0 ? '到站中' : `${minEta} 分鐘後到站`}，距離你 ${Math.round(distance)} 米`;
 
-      addDebug(`🔔 notify: ${notifyKey} dist=${Math.round(distance)}m eta=${minEta}min`);
+        addDebug(`🔔 notify: ${notifyKey} dist=${Math.round(distance)}m eta=${minEta}min`);
 
-      try {
-        new Notification(title, {
-          body,
-          icon: '/icon-192x192.png',
-          tag: notifyKey, // prevents duplicate notifications
-        });
-      } catch (err) {
-        addDebug(`🔔 notification error: ${err}`);
+        sendNotification(title, { body, tag: notifyKey });
       }
+    } catch (err) {
+      addDebug(`🔔 notification error: ${err}`);
     }
   }, [liveLocation, segmentETAs, route.segments]);
+
+  // ── Journey progress notification (persistent) ─────────────────────
+  useEffect(() => {
+    try {
+      if (!liveLocation) {
+        addDebug('📊 progress: no liveLocation');
+        return;
+      }
+      const hasNotification = 'Notification' in window;
+      addDebug(`📊 progress: hasNotification=${hasNotification}, permission=${hasNotification ? Notification.permission : 'N/A'}`);
+      if (!hasNotification) {
+        addDebug('📊 progress: Notification not supported');
+        return;
+      }
+      if (Notification.permission !== 'granted') {
+        addDebug('📊 progress: permission not granted');
+        return;
+      }
+      const notifEnabled = localStorage.getItem('chaser-notifications-enabled');
+      if (notifEnabled !== 'true') {
+        addDebug(`📊 progress: notifEnabled=${notifEnabled}`);
+        return;
+      }
+
+      // Calculate route progress using enriched coordinates
+      const enriched = enrichedRouteRef.current;
+      const origin = enriched?.origin || route.segments[0]?.fromStop.location;
+      const destination = enriched?.destination || route.segments[route.segments.length - 1]?.toStop.location;
+      if (!origin || !destination) {
+        addDebug('📊 progress: no origin/destination');
+        return;
+      }
+      if (typeof origin.lat !== 'number' || typeof origin.lng !== 'number' ||
+          typeof destination.lat !== 'number' || typeof destination.lng !== 'number') {
+        addDebug('📊 progress: lat/lng not set — need enrichSegmentWithCoords');
+        return;
+      }
+      addDebug(`📊 progress: origin=(${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}) dest=(${destination.lat.toFixed(4)},${destination.lng.toFixed(4)})`);
+      if (origin.lat === 0 || origin.lng === 0 || destination.lat === 0 || destination.lng === 0) {
+        addDebug('📊 progress: zero coordinates — need enrichSegmentWithCoords');
+        return;
+      }
+
+      const totalDist = haversineMeters(origin, destination);
+      if (totalDist < 100) {
+        addDebug(`📊 progress: totalDist too short (${totalDist}m)`);
+        return;
+      }
+
+      // Calculate progress: project user position onto origin→destination line
+      const userDistFromOrigin = haversineMeters(origin, liveLocation);
+      const progress = Math.min(100, Math.max(0, Math.round((userDistFromOrigin / totalDist) * 100)));
+
+      // Build progress bar text
+      const filledBlocks = Math.round(progress / 10);
+      const emptyBlocks = 10 - filledBlocks;
+      const progressBar = '▓'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
+
+      const originName = route.segments[0]?.fromStop.nameZh || route.segments[0]?.fromStop.name || '起點';
+      const destName = route.segments[route.segments.length - 1]?.toStop.nameZh || route.segments[route.segments.length - 1]?.toStop.name || '終點';
+
+      const title = `趕車 · ${progress}%`;
+      const body = `${progressBar}\n${originName} → ${destName}`;
+
+      addDebug(`📊 progress: ${progress}% (${Math.round(userDistFromOrigin)}m / ${Math.round(totalDist)}m)`);
+
+      sendNotification(title, { body, tag: 'journey-progress', silent: true });
+    } catch (err) {
+      addDebug(`📊 progress error: ${err}`);
+    }
+  }, [liveLocation, route.segments]);
 
   // ── ETA urgency helpers ─────────────────────────────────────────
   const getEtaColor = (min: number) => {
@@ -602,18 +742,19 @@ export default function TrackingView({
         </button>
       )}
 
-      {/* ── ETA Floating Card (top-right) ────────────────────────── */}
-      {showETAPanel && (
-        <div
-          className="absolute top-3 right-3 w-[200px] bg-black/80 backdrop-blur-xl rounded-xl border border-white/15 shadow-2xl overflow-hidden pointer-events-auto"
-          style={{ zIndex: 1000 }}
-        >
+      {/* ── LEFT COLUMN: Floating cards stacked with consistent gap ── */}
+      <div className="absolute top-14 left-3 flex flex-col gap-3" style={{ zIndex: 1000, maxWidth: 280 }}>
+        {/* ── ETA Floating Card ────────────────────────── */}
+        {showETAPanel && (
+          <div
+            className="w-full bg-black/80 backdrop-blur-xl rounded-xl border border-white/15 shadow-2xl overflow-hidden pointer-events-auto"
+          >
           {/* ETA header */}
           <div className="flex items-center justify-between px-2.5 pt-2 pb-1">
             <div className="flex items-center gap-1.5">
-              <h3 className="text-[11px] font-semibold text-white">即時到站</h3>
+              <h3 className="text-[10px] font-semibold text-white">即時到站</h3>
               {loading && (
-                <div className="w-2.5 h-2.5 border-[1.5px] border-blue-400 border-t-transparent rounded-full animate-spin" />
+                <div className="w-2 h-2 border-[1.5px] border-blue-400 border-t-transparent rounded-full animate-spin" />
               )}
             </div>
             <button
@@ -624,8 +765,8 @@ export default function TrackingView({
             </button>
           </div>
 
-          {/* ETA cards per segment */}
-          <div className="px-2.5 pb-2 space-y-1.5">
+          {/* ETA cards per segment - simplified: only 1 ETA per segment */}
+          <div className="px-2 pb-2 space-y-1">
             {segmentETAs.map((seg) => {
               const segData = route.segments.find(s => s.id === seg.segmentId);
               const isMTR = segData?.route.type === 'mtr';
@@ -639,7 +780,6 @@ export default function TrackingView({
               if (isMTR && fromStation && toStation) {
                 filteredEtas = seg.etas.filter(e => {
                   if (e.minutesAway < 0 && e.remark) return true;
-                  // e.destination is Chinese name (e.g. "中環"), need to resolve to station code
                   const destSt = findStation(e.destination);
                   const terminalCode = destSt?.stationCode || e.destination;
                   return isSameMTRDirection(segData!.route.name, fromStation.stationCode, toStation.stationCode, terminalCode);
@@ -648,6 +788,7 @@ export default function TrackingView({
               
               const validEtas = filteredEtas.filter(e => e.minutesAway >= 0);
               const minEta = validEtas.length > 0 ? validEtas[0].minutesAway : null;
+              const firstEta = filteredEtas.find(e => e.minutesAway >= 0 || e.remark);
               const borderColor =
                 minEta !== null && minEta <= 2
                   ? 'border-red-500/50'
@@ -656,39 +797,27 @@ export default function TrackingView({
                     : 'border-white/10';
 
               return (
-                <div key={seg.segmentId} className={`rounded-lg border p-2 bg-white/5 ${borderColor}`}>
-                  <p className="text-[10px] font-medium text-white truncate mb-1">
-                    {isMTR ? '🚇' : '🚌'} {seg.label}
-                  </p>
-
-                  {filteredEtas.length === 0 ? (
-                    <p className="text-[10px] text-gray-500">暫無班次</p>
-                  ) : (
-                    <div className="space-y-0.5">
-                      {filteredEtas
-                        .filter(eta => eta.minutesAway >= 0 || eta.remark)
-                        .slice(0, isMTR ? 2 : 2)
-                        .map((eta, i) => (
-                        <div key={i} className="flex items-center justify-between">
-                          <span className="text-[10px] text-gray-400 truncate max-w-[55%]">
-                            → {eta.destination}
-                          </span>
-                          {eta.minutesAway >= 0 ? (
-                            <span className={`text-[10px] font-bold ${getEtaColor(eta.minutesAway)}`}>
-                              {eta.minutesAway === 0 ? '到站' : `${eta.minutesAway}'`}
-                            </span>
-                          ) : (
-                            <span className="text-[9px] text-gray-500 italic">
-                              {eta.remark || '—'}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
+                <div key={seg.segmentId} className={`rounded-lg border px-2 py-1.5 bg-white/5 ${borderColor}`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-medium text-white truncate">
+                      {isMTR ? '🚇' : '🚌'} {seg.label}
+                    </span>
+                    {firstEta ? (
+                      firstEta.minutesAway >= 0 ? (
+                        <span className={`text-[10px] font-bold ${getEtaColor(firstEta.minutesAway)}`}>
+                          {firstEta.minutesAway === 0 ? '到站' : `${firstEta.minutesAway}'`}
+                        </span>
+                      ) : (
+                        <span className="text-[8px] text-gray-500 italic">
+                          {firstEta.remark || '—'}
+                        </span>
+                      )
+                    ) : (
+                      <span className="text-[8px] text-gray-500">無</span>
+                    )}
+                  </div>
                   {minEta !== null && minEta <= 2 && (
-                    <p className="text-[9px] text-red-300 mt-1 font-medium">
+                    <p className="text-[8px] text-red-300 mt-0.5 font-medium">
                       🏃 趕快！
                     </p>
                   )}
@@ -699,8 +828,22 @@ export default function TrackingView({
         </div>
       )}
 
-      {/* ── ETA toggle button (when panel hidden) ────────────────── */}
-      {!showETAPanel && (
+      {/* ── Alternative Route Cards (in same left column, below ETA) ── */}
+      {alternatives.length > 0 && (
+        <div className="w-full space-y-2 pointer-events-auto">
+          {alternatives.map((seg) => (
+            <AlternativeRouteCard
+              key={seg.segmentId}
+              segment={seg}
+            />
+          ))}
+        </div>
+      )}
+
+      </div>{/* ── END left column ── */}
+
+      {/* ── ETA toggle button (when left column hidden) ── */}
+      {!showETAPanel && alternatives.length === 0 && (
         <button
           onClick={() => setShowETAPanel(true)}
           className="absolute top-4 right-4 bg-black/70 backdrop-blur-xl text-white text-sm px-3.5 py-2 rounded-xl border border-white/15 shadow-lg"
@@ -711,7 +854,7 @@ export default function TrackingView({
       )}
 
       {/* ── Debug button + panel ──────────────────────────────────── */}
-      <div className="absolute bottom-20 left-3" style={{ zIndex: 1000 }}>
+      <div className="absolute bottom-32 left-3" style={{ zIndex: 1000 }}>
         <button
           onClick={() => setShowDebugPanel(prev => !prev)}
           className="bg-yellow-500/90 text-black text-[10px] font-bold px-2 py-1 rounded-full shadow-lg"
@@ -737,22 +880,27 @@ export default function TrackingView({
         )}
       </div>
 
-      {/* ── Smart Route Recommendation (top priority) ─────────────────── */}
+      {/* ── Smart Route Recommendation (badge, bottom-right above timeline) ─────────────────── */}
       {smartRouteRec && smartRouteRec.bestAlternative && (
-        <div className="absolute top-[220px] right-3 w-[300px] pointer-events-auto" style={{ zIndex: 1002 }}>
-          <SmartRouteCard recommendation={smartRouteRec} />
-        </div>
-      )}
-
-      {/* ── Alternative Route Recommendations (floating, below ETA panel) ── */}
-      {alternatives.length > 0 && (
-        <div className="absolute top-[330px] right-3 w-[280px] space-y-2 pointer-events-auto" style={{ zIndex: 1001 }}>
-          {alternatives.map((seg) => (
-            <AlternativeRouteCard
-              key={seg.segmentId}
-              segment={seg}
-            />
-          ))}
+        <div className="absolute bottom-40 right-3 pointer-events-auto" style={{ zIndex: 1002 }}>
+          {showSmartRouteDetail ? (
+            <div className="relative w-[280px]">
+              <SmartRouteCard recommendation={smartRouteRec} />
+              <button
+                onClick={() => setShowSmartRouteDetail(false)}
+                className="absolute top-1 right-1 text-gray-400 hover:text-white text-xs p-1"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowSmartRouteDetail(true)}
+              className="bg-emerald-500/90 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1"
+            >
+              🚀 {smartRouteRec.bestAlternative.name} 快 {smartRouteRec.bestAlternative.savedVsConfigured}min
+            </button>
+          )}
         </div>
       )}
 

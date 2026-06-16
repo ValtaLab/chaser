@@ -1,6 +1,6 @@
 // Combined ETA service — merges bus + MTR + GMB + tram data
 import { getStopETA, type StopETA } from './bus-api';
-import { getMTRETA, type MTRETA, findStation } from './mtr-api';
+import { getMTRETA, type MTRETA, findStation, getMTRLineName } from './mtr-api';
 import { getGMBStopETASummary, type GMBStopETAInfo } from './gmb-api';
 import { getEstimatedTramTime } from './tram-api';
 import { walkTimeBetween, haversineMeters } from './road-snap';
@@ -258,7 +258,7 @@ export async function calculateTotalJourney(
     segments.push({
       type: 'wait',
       minutes: waitMinutes,
-      description: `等 ${seg.route.name}`,
+      description: `等 ${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}`,
     });
     totalMinutes += waitMinutes;
 
@@ -302,7 +302,7 @@ export async function calculateTotalJourney(
     segments.push({
       type: 'ride',
       minutes: rideMinutes,
-      description: `乘搭 ${seg.route.name}`,
+      description: `乘搭 ${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}`,
     });
     totalMinutes += rideMinutes;
   }

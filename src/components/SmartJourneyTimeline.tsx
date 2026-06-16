@@ -22,16 +22,16 @@ function getTransportEmoji(description: string): string {
 function SegmentPill({ segment }: { segment: SmartSegment }) {
   if (segment.type === 'walk') {
     return (
-      <span className="inline-flex items-center gap-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-full px-1.5 py-0.5 text-[10px] whitespace-nowrap">
-        🚶 {segment.minutes}'
+      <span className="inline-flex items-center gap-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-full px-1 py-0.5 text-[9px] whitespace-nowrap">
+        🚶{segment.minutes}'
       </span>
     );
   }
 
   if (segment.type === 'wait') {
     return (
-      <span className="inline-flex items-center gap-0.5 bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 rounded-full px-1.5 py-0.5 text-[10px] whitespace-nowrap">
-        🕐 {segment.minutes}'
+      <span className="inline-flex items-center gap-0.5 bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 rounded-full px-1 py-0.5 text-[9px] whitespace-nowrap">
+        🕐{segment.minutes}'
       </span>
     );
   }
@@ -39,8 +39,8 @@ function SegmentPill({ segment }: { segment: SmartSegment }) {
   // ride
   const emoji = getTransportEmoji(segment.description);
   return (
-    <span className="inline-flex items-center gap-0.5 bg-green-500/20 text-green-300 border border-green-500/30 rounded-full px-1.5 py-0.5 text-[10px] whitespace-nowrap">
-      {emoji} {segment.minutes}'
+    <span className="inline-flex items-center gap-0.5 bg-green-500/20 text-green-300 border border-green-500/30 rounded-full px-1 py-0.5 text-[9px] whitespace-nowrap">
+      {emoji}{segment.minutes}'
     </span>
   );
 }
@@ -82,20 +82,20 @@ export default function SmartJourneyTimeline({
 
   return (
     <div
-      className="absolute left-3 right-3 bottom-16 z-[1000]"
+      className="absolute left-3 right-3 bottom-20 z-[1000] max-w-[calc(100%-24px)]"
       onClick={onToggle}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(); }}
     >
-      <div className="bg-black/80 backdrop-blur-xl rounded-xl border border-white/15 p-2 cursor-pointer select-none">
+      <div className="bg-black/80 backdrop-blur-xl rounded-xl border border-white/15 p-1.5 cursor-pointer select-none">
         {/* ── Collapsed: horizontal pill timeline ─────────────────── */}
-        <div className="flex items-center gap-1 overflow-x-auto scrollbar-hide">
+        <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
           {segments.map((seg, i) => (
-            <span key={i} className="flex items-center gap-1 shrink-0">
+            <span key={i} className="flex items-center gap-0.5 shrink-0">
               <SegmentPill segment={seg} />
               {i < segments.length - 1 && (
-                <span className="text-gray-500 text-[10px]">→</span>
+                <span className="text-gray-500 text-[8px]">→</span>
               )}
             </span>
           ))}

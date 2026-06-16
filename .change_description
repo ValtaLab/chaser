@@ -1,7 +1,2 @@
-UI: stronger contrast for white theme
-- Deeper blue/indigo header gradient
-- Thicker card borders (border-2, border-300/400)
-- Bolder text (font-semibold, darker grays)
-- Color-tinted stat cards (blue/green/gray borders)
-- Stronger nav active states
-- More saturated badge colors
+修復
+Timeline 展開詳情嘅 MTR 名改中文（等 TWL→等荃灣綫，乘搭 ISL→乘搭港島綫）

@@ -43,6 +43,16 @@ export const MTR_LINES: MTRLine[] = [
   { code: 'DRL', name_tc: '迪士尼綫', name_en: 'Disneyland Resort Line' },
 ];
 
+// MTR line code → Chinese name lookup
+const MTR_CODE_TO_NAME: Record<string, string> = {};
+for (const line of MTR_LINES) {
+  MTR_CODE_TO_NAME[line.code] = line.name_tc;
+}
+
+export function getMTRLineName(code: string): string {
+  return MTR_CODE_TO_NAME[code] || code;
+}
+
 // Common MTR stations with codes
 export const MTR_STATIONS: MTRStation[] = [
   // Tsuen Wan Line (TWL)

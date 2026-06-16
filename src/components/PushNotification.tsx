@@ -24,20 +24,24 @@ export default function PushNotification() {
   }, []);
 
   const toggle = useCallback(async () => {
-    if (!("Notification" in window)) return;
-
-    if (enabled) {
-      setEnabled(false);
-      localStorage.setItem(STORAGE_KEY, "false");
-    } else {
-      if (Notification.permission === "denied") {
-        return;
+    try {
+      if (!("Notification" in window)) return;
+      if (enabled) {
+        setEnabled(false);
+        localStorage.setItem(STORAGE_KEY, "false");
+      } else {
+        if (Notification.permission === "denied") {
+          alert("通知權限已被封鎖，請到瀏覽器設定中允許通知");
+          return;
+        }
+        const result = await Notification.requestPermission();
+        if (result === "granted") {
+          setEnabled(true);
+          localStorage.setItem(STORAGE_KEY, "true");
+        }
       }
-      const result = await Notification.requestPermission();
-      if (result === "granted") {
-        setEnabled(true);
-        localStorage.setItem(STORAGE_KEY, "true");
-      }
+    } catch (e) {
+      console.error('[PushNotification] toggle error:', e);
     }
   }, [enabled]);
 
@@ -45,13 +49,30 @@ export default function PushNotification() {
     return <div className="w-12 h-7 rounded-full bg-gray-200 flex-shrink-0" />;
   }
 
+  // Check if iOS but not installed as PWA
+  const isIOS = typeof window !== 'undefined' && (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1) // iPadOS desktop mode
+  );
+  const isStandalone = typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
+  const iosNotInstalled = isIOS && !isStandalone;
+
   if (!supported) {
     return (
       <span className="text-xs text-gray-400">
-        需加至主屏幕
+        瀏覽器不支援通知
       </span>
     );
   }
+
+  if (iosNotInstalled) {
+    return (
+      <span className="text-xs text-gray-400">
+        iOS 需加至主屏幕
+      </span>
+    );
+  }
+
 
   return (
     <button
