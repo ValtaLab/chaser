@@ -232,7 +232,10 @@ export default function TrackingView({
         );
         const origin = segments[0]?.fromStop.location;
         const dest = segments[segments.length - 1]?.toStop.location;
-        if (origin && dest && (origin.lat !== 0 || dest.lat !== 0)) {
+        if (origin && dest &&
+            typeof origin.lat === 'number' && typeof origin.lng === 'number' &&
+            typeof dest.lat === 'number' && typeof dest.lng === 'number' &&
+            (origin.lat !== 0 || dest.lat !== 0)) {
           enrichedRouteRef.current = { origin, destination: dest };
           addDebug(`🗺️ enriched coords: origin=(${origin.lat.toFixed(4)},${origin.lng.toFixed(4)})`);
         }

@@ -107,12 +107,25 @@ export async function enrichSegmentWithCoords(segment: CommuteSegment): Promise<
       const coords = getMTRStationCoords(segment.fromStop.id);
       if (coords) {
         enriched.fromStop = { ...enriched.fromStop, location: coords };
+      } else {
+        // Fallback: try matching by Chinese name
+        const station = segment.fromStop.nameZh || segment.fromStop.name;
+        const found = MTR_STATIONS.find(s => s.name_tc === station || s.stationCode === station);
+        if (found) {
+          enriched.fromStop = { ...enriched.fromStop, location: { lat: found.lat, lng: found.lng } };
+        }
       }
     }
     if (isZero(segment.toStop.location)) {
       const coords = getMTRStationCoords(segment.toStop.id);
       if (coords) {
         enriched.toStop = { ...enriched.toStop, location: coords };
+      } else {
+        const station = segment.toStop.nameZh || segment.toStop.name;
+        const found = MTR_STATIONS.find(s => s.name_tc === station || s.stationCode === station);
+        if (found) {
+          enriched.toStop = { ...enriched.toStop, location: { lat: found.lat, lng: found.lng } };
+        }
       }
     }
     return enriched;
@@ -122,18 +135,61 @@ export async function enrichSegmentWithCoords(segment: CommuteSegment): Promise<
   const company = getSegmentCompany(segment);
 
   if (company && isZero(segment.fromStop.location)) {
-    const coords = await getStopCoordinates(segment.fromStop.id, company);
+    let coords = await getStopCoordinates(segment.fromStop.id, company);
+    if (!coords) {
+      // Fallback: try KMB route-stop list to find by Chinese name
+      coords = await findBusStopCoordsByName(segment, company, 'from');
+    }
     if (coords) {
       enriched.fromStop = { ...enriched.fromStop, location: coords };
     }
   }
 
   if (company && isZero(segment.toStop.location)) {
-    const coords = await getStopCoordinates(segment.toStop.id, company);
+    let coords = await getStopCoordinates(segment.toStop.id, company);
+    if (!coords) {
+      coords = await findBusStopCoordsByName(segment, company, 'to');
+    }
     if (coords) {
       enriched.toStop = { ...enriched.toStop, location: coords };
     }
   }
 
   return enriched;
+}
+
+// Fallback: fetch bus stop coords by searching the route's stop list for matching Chinese name
+async function findBusStopCoordsByName(
+  segment: CommuteSegment,
+  company: 'KMB' | 'CTB',
+  which: 'from' | 'to'
+): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const stopName = which === 'from'
+      ? (segment.fromStop.nameZh || segment.fromStop.name)
+      : (segment.toStop.nameZh || segment.toStop.name);
+    const routeName = segment.route.name;
+    const bound = segment.route.id; // could have bound info
+    const baseUrl = company === 'KMB'
+      ? 'https://data.etabus.gov.hk/v1/transport/kmb'
+      : 'https://rt.data.gov.hk/v2/transport/citybus';
+    
+    // Try both directions
+    for (const dir of ['outbound', 'inbound']) {
+      const res = await fetch(`${baseUrl}/route-stop/${routeName}/${dir}/1`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const stops: { stop: string; seq: number }[] = (data.data || []);
+      for (const s of stops) {
+        const infoRes = await fetch(`${baseUrl}/stop/${s.stop}`);
+        if (!infoRes.ok) continue;
+        const info = await infoRes.json();
+        const infoData = info.data;
+        if (infoData && (infoData.name_tc === stopName || infoData.name_en === stopName)) {
+          return { lat: infoData.lat, lng: infoData.long || infoData.lng };
+        }
+      }
+    }
+  } catch { /* silent */ }
+  return null;
 }
