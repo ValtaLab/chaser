@@ -2,6 +2,7 @@
 
 const CACHE_NAME = "chaser-v5";
 const SW_VERSION = "5.0.0";
+const WORKER_URL = "https://chaser-auth.isearover.workers.dev";
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",
@@ -98,26 +99,48 @@ self.addEventListener("fetch", (event) => {
 
 // Push notification handler
 self.addEventListener("push", (event) => {
-  let data = { title: "趕車 Chaser", body: "你嘅車快到站啦！", url: "/" };
+  // If push has inline data, use it directly (backwards compatibility)
   if (event.data) {
     try {
-      data = event.data.json();
-    } catch {
-      data.body = event.data.text();
-    }
+      const data = event.data.json();
+      event.waitUntil(
+        self.registration.showNotification(data.title || "趕車 Chaser", {
+          body: data.body || "你嘅車快到站啦！",
+          icon: "/icon-192x192.png",
+          badge: "/icon-192x192.png",
+          data: { url: data.url || "/" },
+          actions: [
+            { action: "open", title: "開啟" },
+            { action: "dismiss", title: "忽略" },
+          ],
+        })
+      );
+      return;
+    } catch {}
   }
 
+  // Empty push (no payload) — fetch notification content from worker
   event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: "/icon-192x192.png",
-      badge: "/icon-192x192.png",
-      data: { url: data.url },
-      actions: [
-        { action: "open", title: "開啟" },
-        { action: "dismiss", title: "忽略" },
-      ],
-    })
+    fetch(`${WORKER_URL}/pending-notification`)
+      .then((res) => {
+        if (!res.ok) throw new Error("no pending");
+        return res.json();
+      })
+      .then((data) => {
+        return self.registration.showNotification(data.title || "趕車", {
+          body: data.body || "",
+          icon: "/icon-192x192.png",
+          badge: "/icon-192x192.png",
+          data: { url: "/" },
+          actions: [
+            { action: "open", title: "開啟" },
+            { action: "dismiss", title: "忽略" },
+          ],
+        });
+      })
+      .catch(() => {
+        // No pending notification — do nothing
+      })
   );
 });
 

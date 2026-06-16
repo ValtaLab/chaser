@@ -584,6 +584,9 @@ export default function TrackingView({
   // ── Proximity-based arrival notifications ─────────────────────
   const notifiedStations = useRef<Set<string>>(new Set());
 
+  // ── Transfer proximity notifications (deduplicate) ───────────
+  const notifiedTransfers = useRef<Set<string>>(new Set());
+
   // Check proximity to boarding stations and notify if ETA <= 5 min
   useEffect(() => {
     try {
@@ -632,6 +635,82 @@ export default function TrackingView({
       addDebug(`🔔 notification error: ${err}`);
     }
   }, [liveLocation, segmentETAs, route.segments]);
+
+  // ── Transfer proximity: approaching alighting stop → next segment ETAs ──
+  useEffect(() => {
+    try {
+      if (!liveLocation || route.segments.length < 2) return;
+      if (!('Notification' in window)) return;
+      // iOS PWA uses Service Worker showNotification, no permission needed
+      const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isIOSPWA = isStandalone && isIOS;
+      if (!isIOSPWA && Notification.permission !== 'granted') return;
+      if (localStorage.getItem('chaser-notifications-enabled') !== 'true') return;
+
+      for (let i = 0; i < route.segments.length - 1; i++) {
+        const currentSeg = route.segments[i];
+        const nextSeg = route.segments[i + 1];
+
+        // Check proximity to alighting stop of current segment
+        const alightLoc = currentSeg.toStop.location;
+        if (!alightLoc || typeof alightLoc.lat !== 'number' || alightLoc.lat === 0) continue;
+
+        const distance = haversineMeters(liveLocation, alightLoc);
+        if (distance > 500) continue;
+
+        // Deduplicate: each transfer notifies only once per journey
+        const transferKey = `transfer-${currentSeg.id}`;
+        if (notifiedTransfers.current.has(transferKey)) continue;
+        notifiedTransfers.current.add(transferKey);
+
+        addDebug(`🔀 transfer proximity: ${currentSeg.toStop.nameZh} dist=${Math.round(distance)}m`);
+
+        // Fetch ETA for next segment's boarding stop
+        const nextRouteType = nextSeg.route.type as 'bus' | 'mtr' | 'gmb' | 'tram';
+        const nextCompany = nextSeg.route.operator === 'citybus' ? 'CTB' : 'KMB';
+        const nextLineCode = nextRouteType === 'mtr' ? nextSeg.route.name : undefined;
+
+        fetchETA(
+          nextSeg.fromStop.id,
+          nextRouteType,
+          nextCompany,
+          nextSeg.route.name,
+          nextLineCode,
+        ).then(etas => {
+          const validEtas = etas.filter(e => e.minutesAway >= 0).slice(0, 3);
+          const alightName = currentSeg.toStop.nameZh || currentSeg.toStop.name;
+          const nextRouteName = nextSeg.route.type === 'mtr'
+            ? getMTRLineName(nextSeg.route.name)
+            : nextSeg.route.name;
+          const nextStopName = nextSeg.fromStop.nameZh || nextSeg.fromStop.name;
+
+          let etaLines: string;
+          if (validEtas.length === 0) {
+            etaLines = '暫無班次資料';
+          } else {
+            etaLines = validEtas.map((e, idx) => {
+              const label = ['①', '②', '③'][idx] || `${idx + 1}.`;
+              const time = e.minutesAway === 0 ? '到站' : `${e.minutesAway}分鐘`;
+              const platform = e.platform ? ` (${e.platform}月台)` : '';
+              return `${label} ${time}${platform}`;
+            }).join('\n');
+          }
+
+          const title = `🔀 轉乘 ${nextRouteName}`;
+          const body = `${alightName} 落車 → ${nextStopName}\n${etaLines}`;
+
+          addDebug(`🔀 transfer notify: ${transferKey} → ${title}`);
+          sendNotification(title, { body, tag: transferKey });
+        }).catch(err => {
+          addDebug(`🔀 transfer eta error: ${transferKey} ${err}`);
+        });
+      }
+    } catch (err) {
+      addDebug(`🔀 transfer notification error: ${err}`);
+    }
+  }, [liveLocation, route.segments, enrichmentDone]);
 
   // ── Journey progress notification (persistent) ─────────────────────
   useEffect(() => {
@@ -730,6 +809,63 @@ export default function TrackingView({
       addDebug(`📊 progress error: ${err}`);
     }
   }, [liveLocation, route.segments, enrichmentDone]);
+
+  // ── Push notification network: journey start + location + pagehide ──
+  const WORKER_URL = 'https://chaser-auth.isearover.workers.dev';
+  const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSentLocRef = useRef<string>('');
+
+  // Journey start: POST route segments to worker on mount
+  useEffect(() => {
+    const segs = route.segments.map(s => ({
+      id: s.id,
+      type: s.route.type,
+      name: s.route.name,
+      fromStop: { id: s.fromStop.id, nameZh: s.fromStop.nameZh, location: s.fromStop.location },
+      toStop: { id: s.toStop.id, nameZh: s.toStop.nameZh, location: s.toStop.location },
+    }));
+    fetch(`${WORKER_URL}/journey/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ segments: segs }),
+    }).catch(() => {});
+
+    // Pagehide: send last location before page is hidden
+    const onHide = () => {
+      const loc = liveLocationRef.current;
+      if (loc) {
+        navigator.sendBeacon(`${WORKER_URL}/location`, JSON.stringify({ lat: loc.lat, lng: loc.lng }));
+      }
+    };
+    window.addEventListener('pagehide', onHide);
+
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+      // Journey end: cleanup on unmount
+      fetch(`${WORKER_URL}/journey/end`, { method: 'POST' }).catch(() => {});
+    };
+  }, [route.segments]);
+
+  // Debounced location send: POST to worker on each GPS update
+  const liveLocationRef = useRef<Location | null>(null);
+  liveLocationRef.current = liveLocation;
+
+  useEffect(() => {
+    if (!liveLocation) return;
+    const key = `${liveLocation.lat.toFixed(4)},${liveLocation.lng.toFixed(4)}`;
+    if (key === lastSentLocRef.current) return; // Skip duplicate
+
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+    locationDebounceRef.current = setTimeout(() => {
+      lastSentLocRef.current = key;
+      fetch(`${WORKER_URL}/location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat: liveLocation.lat, lng: liveLocation.lng }),
+      }).catch(() => {});
+    }, 10000); // Debounce 10s
+  }, [liveLocation]);
 
   // ── ETA urgency helpers ─────────────────────────────────────────
   const getEtaColor = (min: number) => {
