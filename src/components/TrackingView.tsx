@@ -215,6 +215,8 @@ export default function TrackingView({
   const [showSmartRouteDetail, setShowSmartRouteDetail] = useState(false);
   const [showTimelineDetail, setShowTimelineDetail] = useState(false);
   const enrichedRouteRef = useRef<{ origin: Location; destination: Location } | null>(null);
+  const enrichedSegmentsRef = useRef<CommuteSegment[] | null>(null);
+  const [enrichmentDone, setEnrichmentDone] = useState(false);
   const addDebug = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
     const line = `${ts} ${msg}`;
@@ -230,6 +232,7 @@ export default function TrackingView({
         const segments = await Promise.all(
           route.segments.map(seg => enrichSegmentWithCoords(seg))
         );
+        enrichedSegmentsRef.current = segments;
         const origin = segments[0]?.fromStop.location;
         const dest = segments[segments.length - 1]?.toStop.location;
         if (origin && dest &&
@@ -242,6 +245,7 @@ export default function TrackingView({
       } catch {
         // Silent fail — progress notification just won't work for old routes
       }
+      setEnrichmentDone(true);
     })();
   }, [route.segments]);
 
@@ -659,12 +663,14 @@ export default function TrackingView({
 
       // Calculate route progress using enriched coordinates
       const enriched = enrichedRouteRef.current;
+      const enrichedSegs = enrichedSegmentsRef.current;
       let origin = enriched?.origin;
       let destination = enriched?.destination;
       
-      // Fallback: crawl segments to find first/last valid non-zero coordinates
+      // Fallback: crawl enriched segments for first/last valid non-zero coordinates
       if (!origin || typeof origin.lat !== 'number' || origin.lat === 0) {
-        for (const seg of route.segments) {
+        const segs = enrichedSegs || route.segments;
+        for (const seg of segs) {
           if (seg.fromStop.location && typeof seg.fromStop.location.lat === 'number' && seg.fromStop.location.lat !== 0) {
             origin = seg.fromStop.location;
             break;
@@ -672,8 +678,9 @@ export default function TrackingView({
         }
       }
       if (!destination || typeof destination.lat !== 'number' || destination.lat === 0) {
-        for (let i = route.segments.length - 1; i >= 0; i--) {
-          const seg = route.segments[i];
+        const segs = enrichedSegs || route.segments;
+        for (let i = segs.length - 1; i >= 0; i--) {
+          const seg = segs[i];
           if (seg.toStop.location && typeof seg.toStop.location.lat === 'number' && seg.toStop.location.lat !== 0) {
             destination = seg.toStop.location;
             break;
@@ -722,7 +729,7 @@ export default function TrackingView({
     } catch (err) {
       addDebug(`📊 progress error: ${err}`);
     }
-  }, [liveLocation, route.segments]);
+  }, [liveLocation, route.segments, enrichmentDone]);
 
   // ── ETA urgency helpers ─────────────────────────────────────────
   const getEtaColor = (min: number) => {
