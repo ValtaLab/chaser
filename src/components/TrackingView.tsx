@@ -135,14 +135,14 @@ async function findDirectionWithStops(
 // Use ServiceWorkerRegistration.showNotification() instead.
 function sendNotification(title: string, options: { body: string; tag: string; silent?: boolean }) {
   try {
-    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    if (!('Notification' in window)) return;
 
     const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches;
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
       (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     if (isStandalone && isIOS) {
-      // iOS PWA: use Service Worker showNotification
+      // iOS PWA: use Service Worker showNotification — no Notification.permission needed
       navigator.serviceWorker?.getRegistration()?.then(reg => {
         reg?.showNotification(title, {
           body: options.body,
@@ -153,6 +153,7 @@ function sendNotification(title: string, options: { body: string; tag: string; s
       }).catch(() => {/* silent fail */});
     } else {
       // Desktop Safari / Chrome: use Notification constructor
+      if (Notification.permission !== 'granted') return;
       try {
         new Notification(title, {
           body: options.body,
@@ -580,7 +581,13 @@ export default function TrackingView({
   useEffect(() => {
     try {
       if (!liveLocation || segmentETAs.length === 0) return;
-      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      if (!('Notification' in window)) return;
+      // iOS PWA uses Service Worker showNotification, no permission needed
+      const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isIOSPWA = isStandalone && isIOS;
+      if (!isIOSPWA && Notification.permission !== 'granted') return;
       // Respect user preference in settings
       if (localStorage.getItem('chaser-notifications-enabled') === 'false') return;
 
@@ -632,7 +639,12 @@ export default function TrackingView({
         addDebug('📊 progress: Notification not supported');
         return;
       }
-      if (Notification.permission !== 'granted') {
+      // iOS PWA uses Service Worker showNotification, no permission needed
+      const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      const isIOSPWA = isStandalone && isIOS;
+      if (!isIOSPWA && Notification.permission !== 'granted') {
         addDebug('📊 progress: permission not granted');
         return;
       }

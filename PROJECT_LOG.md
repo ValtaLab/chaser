@@ -2,15 +2,15 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-06-16T01:30:00+08:00
-last_version: ios-notification-crash-fix-v1
+last_deploy: 2026-06-16T11:30:00+08:00
+last_version: mtr-line-name-chinese-v1
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
 
 ## 🚀 最新狀態 (2026-06-16)
-**版本:** `ios-notification-crash-fix-v1` | **部署時間:** ~01:30 HKT | **狀態:** 運行中  
+**版本:** `mtr-line-name-chinese-v1` | **部署時間:** ~11:30 HKT | **狀態:** 運行中  
 **部署地址:** https://master.chaser-6ta.pages.dev
 
 ### 核心功能
