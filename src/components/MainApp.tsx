@@ -15,7 +15,7 @@ import UserMenu from './UserMenu';
 import Settings from './Settings';
 import { setOnUpdateAvailable } from './ServiceWorker注册';
 import type { CommuteRoute } from '@/types';
-import { Timer, Home, Plus, MapPin, Settings as SettingsIcon, Cloud, RefreshCw, ChevronRight } from 'lucide-react';
+import { Home, Plus, MapPin, Settings as SettingsIcon, Cloud, RefreshCw, ChevronRight } from 'lucide-react';
 
 const NAV_ITEMS = [
   { key: 'home' as const, icon: 'Home', label: '首頁' },
@@ -265,8 +265,8 @@ export default function MainApp() {
         <div className="max-w-md mx-auto px-4 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-600/30">
-                <Timer size={20} className="text-white" strokeWidth={2.5} />
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-600/30 overflow-hidden">
+                <img src="/icon-192-v2.png" alt="Chaser" className="w-full h-full object-cover" />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-gray-900 leading-tight">趕車</h1>

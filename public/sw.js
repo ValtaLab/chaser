@@ -1,13 +1,13 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = "chaser-v5";
+const CACHE_NAME = "chaser-v7";
 const SW_VERSION = "5.0.0";
 const WORKER_URL = "https://chaser-auth.isearover.workers.dev";
 const STATIC_ASSETS = [
   "/",
   "/manifest.json",
-  "/icon-192x192.png",
-  "/icon-512x512.png",
+  "/icon-192-v2.png",
+  "/icon-512-v2.png",
 ];
 
 // Install: pre-cache static assets
@@ -106,8 +106,8 @@ self.addEventListener("push", (event) => {
       event.waitUntil(
         self.registration.showNotification(data.title || "趕車 Chaser", {
           body: data.body || "你嘅車快到站啦！",
-          icon: "/icon-192x192.png",
-          badge: "/icon-192x192.png",
+          icon: "/icon-192-v2.png",
+          badge: "/icon-192-v2.png",
           data: { url: data.url || "/" },
           actions: [
             { action: "open", title: "開啟" },
@@ -129,8 +129,8 @@ self.addEventListener("push", (event) => {
       .then((data) => {
         return self.registration.showNotification(data.title || "趕車", {
           body: data.body || "",
-          icon: "/icon-192x192.png",
-          badge: "/icon-192x192.png",
+          icon: "/icon-192-v2.png",
+          badge: "/icon-192-v2.png",
           data: { url: "/" },
           actions: [
             { action: "open", title: "開啟" },

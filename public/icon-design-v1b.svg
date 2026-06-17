@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Gradient flowing along the C curve: sky blue → blue → purple -->
+    <linearGradient id="cGrad" x1="379" y1="140" x2="379" y2="370" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="40%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <!-- Glow for the start dot -->
+    <filter id="dotGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Diamond glow -->
+    <filter id="diamondGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+
+  <!-- C shape - thick stroked arc with gradient -->
+  <path d="M 379,170 A 150,150 0 1,0 379,342"
+        stroke="url(#cGrad)" stroke-width="50" stroke-linecap="round" fill="none"/>
+
+  <!-- ============================================ -->
+  <!-- START MARKER: Solid dot with glow rings      -->
+  <!-- Bright center dot with expanding concentric  -->
+  <!-- rings suggesting ripples / origin / "you"    -->
+  <!-- ============================================ -->
+  <g filter="url(#dotGlow)" transform="translate(379, 170)">
+    <!-- Outermost faint ring -->
+    <circle cx="0" cy="0" r="30" fill="none" stroke="#38bdf8" stroke-width="2" opacity="0.15"/>
+    <!-- Second ring -->
+    <circle cx="0" cy="0" r="22" fill="none" stroke="#38bdf8" stroke-width="2" opacity="0.3"/>
+    <!-- Third ring -->
+    <circle cx="0" cy="0" r="15" fill="none" stroke="#38bdf8" stroke-width="2.5" opacity="0.5"/>
+    <!-- Solid bright center dot -->
+    <circle cx="0" cy="0" r="10" fill="#38bdf8"/>
+    <!-- White core -->
+    <circle cx="0" cy="0" r="4.5" fill="#ffffff" opacity="0.95"/>
+  </g>
+
+  <!-- ============================================ -->
+  <!-- DESTINATION MARKER: Diamond with ring         -->
+  <!-- Large rotated square (diamond) inside a      -->
+  <!-- circle - suggests a gemstone / goal / prize  -->
+  <!-- ============================================ -->
+  <g filter="url(#diamondGlow)" transform="translate(379, 342)">
+    <!-- Outer ring -->
+    <circle cx="0" cy="0" r="28" fill="none" stroke="#a78bfa" stroke-width="2.5" opacity="0.45"/>
+    <!-- Diamond shape (rotated square) - large -->
+    <polygon points="0,-20 20,0 0,20 -20,0" fill="none" stroke="#a78bfa" stroke-width="3" stroke-linejoin="round"/>
+    <!-- Inner diamond fill -->
+    <polygon points="0,-10 10,0 0,10 -10,0" fill="#a78bfa" opacity="0.35"/>
+    <!-- Center dot -->
+    <circle cx="0" cy="0" r="4" fill="#a78bfa"/>
+    <!-- Corner accents on outer ring -->
+    <circle cx="0" cy="-28" r="2.5" fill="#a78bfa" opacity="0.65"/>
+    <circle cx="28" cy="0" r="2.5" fill="#a78bfa" opacity="0.65"/>
+    <circle cx="0" cy="28" r="2.5" fill="#a78bfa" opacity="0.65"/>
+    <circle cx="-28" cy="0" r="2.5" fill="#a78bfa" opacity="0.65"/>
+  </g>
+</svg>

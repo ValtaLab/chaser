@@ -11,8 +11,8 @@ export const metadata: Metadata = {
   description: "專為香港通勤族設計的智能轉乘提醒工具，幫你減少等車時間、避免錯過班次",
   manifest: "/manifest.json",
   icons: {
-    icon: "/icon-192x192.png",
-    apple: "/icon-512x512.png",
+    icon: "/icon-192-v2.png",
+    apple: "/icon-512-v2.png",
   },
 };
 
@@ -32,7 +32,7 @@ export default function RootLayout({
   return (
     <html lang="zh-HK">
       <head>
-        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+        <link rel="apple-touch-icon" href="/icon-192-v2.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>

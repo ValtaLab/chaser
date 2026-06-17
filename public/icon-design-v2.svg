@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Gradient for the filled C shape -->
+    <linearGradient id="fillGrad" x1="394" y1="140" x2="394" y2="370" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="35%" stop-color="#60a5fa"/>
+      <stop offset="70%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <!-- Soft glow behind the C -->
+    <filter id="softGlow">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+
+  <!-- Subtle glow layer -->
+  <path d="M 394,159 A 168,168 0 1,0 394,353 L 353,324 A 118,118 0 1,1 353,188 Z"
+        fill="url(#fillGrad)" opacity="0.3" filter="url(#softGlow)"/>
+
+  <!-- Main filled C shape -->
+  <path d="M 394,159 A 168,168 0 1,0 394,353 L 353,324 A 118,118 0 1,1 353,188 Z"
+        fill="url(#fillGrad)"/>
+
+  <!-- Start marker: solid circle with white center -->
+  <circle cx="374" cy="174" r="13" fill="#38bdf8"/>
+  <circle cx="374" cy="174" r="5" fill="#ffffff" opacity="0.9"/>
+
+  <!-- Destination marker: outlined ring -->
+  <circle cx="374" cy="338" r="13" fill="none" stroke="#a78bfa" stroke-width="3.5"/>
+  <circle cx="374" cy="338" r="4.5" fill="#a78bfa"/>
+</svg>

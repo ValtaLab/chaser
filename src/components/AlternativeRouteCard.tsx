@@ -97,7 +97,7 @@ export default function AlternativeRouteCard({ segment, onSelect }: AlternativeR
   if (segment.alternatives.length === 0) return null;
 
   const best = segment.alternatives[0];
-  const bestStyle = confidenceDot(best.confidence);
+  const bestStyle = best ? confidenceDot(best.confidence) : { dot: 'bg-gray-500', badge: '', text: 'text-gray-400' };
 
   return (
     <div
@@ -117,16 +117,20 @@ export default function AlternativeRouteCard({ segment, onSelect }: AlternativeR
             {segment.isLastBusPassed ? '🚨 尾班車已過' : '更快路線'}
           </span>
 
-          {/* Best alternative summary */}
-          <span className="flex items-center gap-1.5 min-w-0">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${bestStyle.dot}`} />
-            <span className="text-white font-bold">{best.routeName}</span>
-          </span>
+          {/* Best alternative summary (only if alternatives exist) */}
+          {best && (
+            <>
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${bestStyle.dot}`} />
+                <span className="text-white font-bold">{best.routeName}</span>
+              </span>
 
-          {/* Time saved badge for best */}
-          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${bestStyle.badge}`}>
-            {segment.isLastBusPassed ? `${best.minutesAway} 分鐘` : `快 ${best.savedMinutes} 分鐘`}
-          </span>
+              {/* Time saved badge for best */}
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${bestStyle.badge}`}>
+                {segment.isLastBusPassed ? `${best.minutesAway} 分鐘` : `快 ${best.savedMinutes} 分鐘`}
+              </span>
+            </>
+          )}
 
           {/* Spacer */}
           <span className="flex-1" />

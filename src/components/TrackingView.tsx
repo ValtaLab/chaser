@@ -3,17 +3,16 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { fetchETA, calculateTotalJourney, type TransportETA } from '@/lib/eta-service';
+import { ChevronLeft } from 'lucide-react';
 import {
   findAlternativesForSegment,
   type SegmentAlternatives,
 } from '@/lib/alternative-routes';
 import {
-  findSmartRoute,
-  type SmartRouteRecommendation as SmartRouteRec,
-} from '@/lib/smart-route';
-import {
   getKMBRouteStops, getKMBStopInfo,
   getCitybusRouteStops, getCitybusStopInfo,
+  findCitybusStopIdByRouteAndName,
+  getCitybusRouteInfo,
 } from '@/lib/bus-api';
 import { getMTRLineCoords, getLineStations, findStation, getMTRLineName } from '@/lib/mtr-api';
 
@@ -40,7 +39,6 @@ import { snapToRoads, haversineMeters } from '@/lib/road-snap';
 import { enrichSegmentWithCoords } from '@/lib/stop-coords';
 import SmartJourneyTimeline from './SmartJourneyTimeline';
 import AlternativeRouteCard from './AlternativeRouteCard';
-import SmartRouteCard from './SmartRouteCard';
 import type { CommuteRoute, CommuteSegment, Location, SmartRouteRecommendation } from '@/types';
 
 // ─── Helper: find correct direction and get all stop coordinates ─────
@@ -147,10 +145,10 @@ function sendNotification(title: string, options: { body: string; tag: string; s
         reg?.showNotification(title, {
           body: options.body,
           tag: options.tag,
-          silent: options.silent ?? false,
-          icon: '/icon-192x192.png',
-        });
-      }).catch(() => {/* silent fail */});
+          icon: '/icon-192-v2.png',
+          badge: '/icon-192-v2.png',
+        }).catch(() => {/* silent fail */});
+      });
     } else {
       // Desktop Safari / Chrome: use Notification constructor
       if (Notification.permission !== 'granted') return;
@@ -158,8 +156,8 @@ function sendNotification(title: string, options: { body: string; tag: string; s
         new Notification(title, {
           body: options.body,
           tag: options.tag,
-          silent: options.silent ?? false,
-          icon: '/icon-192x192.png',
+          icon: '/icon-192-v2.png',
+          badge: '/icon-192-v2.png',
         });
       } catch {/* silent fail */}
     }
@@ -211,11 +209,11 @@ export default function TrackingView({
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [journeyEstimate, setJourneyEstimate] = useState<SmartRouteRecommendation | null>(null);
   const [alternatives, setAlternatives] = useState<SegmentAlternatives[]>([]);
-  const [smartRouteRec, setSmartRouteRec] = useState<SmartRouteRec | null>(null);
-  const [showSmartRouteDetail, setShowSmartRouteDetail] = useState(false);
   const [showTimelineDetail, setShowTimelineDetail] = useState(false);
   const enrichedRouteRef = useRef<{ origin: Location; destination: Location } | null>(null);
   const enrichedSegmentsRef = useRef<CommuteSegment[] | null>(null);
+  // Cache: Set of route names that Citybus also serves (joint-operated routes like 307P)
+  const citybusRouteCacheRef = useRef<Set<string>>(new Set());
   const [enrichmentDone, setEnrichmentDone] = useState(false);
   const addDebug = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -448,6 +446,54 @@ export default function TrackingView({
     return { lat: 22.3193, lng: 114.1694 };
   }, [liveLocation, polylinePoints]);
 
+  // ── Fetch Citybus ETAs (non-blocking, runs after primary ETA display) ──
+  const fetchCitybusETAs = useCallback(async () => {
+    for (const seg of route.segments) {
+      if (seg.route.type !== 'bus') continue;
+      if (seg.route.operator === 'citybus') continue;
+
+      try {
+        if (!citybusRouteCacheRef.current.has(seg.route.name)) {
+          const ctbRoutes = await getCitybusRouteInfo(seg.route.name);
+          if (ctbRoutes.length === 0) continue;
+          citybusRouteCacheRef.current.add(seg.route.name);
+        }
+
+        let citybusStopId = await findCitybusStopIdByRouteAndName(
+          seg.route.name,
+          seg.fromStop.nameZh || seg.fromStop.name,
+          'O'
+        );
+        if (!citybusStopId) {
+          citybusStopId = await findCitybusStopIdByRouteAndName(
+            seg.route.name,
+            seg.fromStop.nameZh || seg.fromStop.name,
+            'I'
+          );
+        }
+        if (!citybusStopId) continue;
+
+        const citybusETAs = await fetchETA(citybusStopId, 'bus', 'CTB', seg.route.name);
+        if (citybusETAs.length === 0) continue;
+
+        addDebug(`🚌 CTB ${seg.route.name}: +${citybusETAs.length} extra ETAs`);
+
+        setSegmentETAs(prev => prev.map(s => {
+          if (s.segmentId !== seg.id) return s;
+          const merged = [...s.etas];
+          for (const cb of citybusETAs) {
+            const isDup = merged.some(e => e.minutesAway === cb.minutesAway && e.destination === cb.destination);
+            if (!isDup) merged.push(cb);
+          }
+          merged.sort((a, b) => a.minutesAway - b.minutesAway);
+          return { ...s, etas: merged };
+        }));
+      } catch {
+        addDebug(`⚠️ Citybus lookup failed for ${seg.route.name}`);
+      }
+    }
+  }, [route.segments]);
+
   // ── Fetch ETAs for all segments ─────────────────────────────────
   const fetchAllETAs = useCallback(async () => {
     setLoading(true);
@@ -463,7 +509,6 @@ export default function TrackingView({
 
           if (routeType === 'mtr') {
             lineCode = seg.route.name;
-            // Debug MTR station lookup
             const fromSt = findStation(seg.fromStop.id) || findStation(seg.fromStop.nameZh || seg.fromStop.name);
             const toSt = findStation(seg.toStop.id) || findStation(seg.toStop.nameZh || seg.toStop.name);
             addDebug(`🚇 MTR ${lineCode}: from=${seg.fromStop.id}→${fromSt?.stationCode||'??'} to=${seg.toStop.id}→${toSt?.stationCode||'??'}`);
@@ -477,6 +522,7 @@ export default function TrackingView({
               seg.route.name,
               lineCode
             );
+
             return {
               segmentId: seg.id,
               label: `${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name} · ${seg.fromStop.nameZh || seg.fromStop.name}`,
@@ -497,7 +543,9 @@ export default function TrackingView({
       console.error('ETA fetch error:', err);
     }
     setLoading(false);
-  }, [route.segments]);
+    // Non-blocking: fetch Citybus ETAs after primary ETA is displayed
+    fetchCitybusETAs();
+  }, [route.segments, fetchCitybusETAs]);
 
   useEffect(() => {
     fetchAllETAs();
@@ -528,7 +576,7 @@ export default function TrackingView({
         try {
           const result = await findAlternativesForSegment(seg, segETA.etas);
           addDebug(`[AltRoutes] Found ${result.alternatives.length} alts, isLastBusPassed=${result.isLastBusPassed}`);
-          if (result.alternatives.length > 0) {
+          if (result.alternatives.length > 0 || result.isLastBusPassed) {
             altResults.push(result);
           }
         } catch (err) {
@@ -543,43 +591,6 @@ export default function TrackingView({
     }
     findAlts();
   }, [segmentETAs, route.segments, addDebug]);
-
-  // ── Smart route recommendation (runs once when location available) ──
-  useEffect(() => {
-    if (!liveLocation || segmentETAs.length === 0) return;
-
-    async function calcSmartRoute() {
-      if (!liveLocation) return;  // Double-check (TypeScript narrowing)
-      try {
-        // Get destination from last segment's toStop
-        const lastSeg = route.segments[route.segments.length - 1];
-        if (!lastSeg) return;
-        const destLocation = lastSeg.toStop.location;
-        if (!destLocation || (destLocation.lat === 0 && destLocation.lng === 0)) return;
-
-        // Build configured route info
-        const configuredRoute = {
-          segments: route.segments.map(seg => ({
-            route: { name: seg.route.name, type: seg.route.type, operator: seg.route.operator },
-            fromStop: seg.fromStop,
-            toStop: seg.toStop,
-          })),
-          etas: segmentETAs.map(segETA => ({
-            route: segETA.label.split(' · ')[0],  // route name from label
-            minutesAway: segETA.etas.length > 0 ? segETA.etas[0].minutesAway : 999,
-          })),
-        };
-
-        console.log('[SmartRoute] Calculating smart route...');
-        const rec = await findSmartRoute(liveLocation!, destLocation, configuredRoute);
-        console.log('[SmartRoute] Result:', rec.bestAlternative ? `saved ${rec.bestAlternative.savedVsConfigured}min` : 'no better option');
-        setSmartRouteRec(rec);
-      } catch (err) {
-        console.error('[SmartRoute] Error:', err);
-      }
-    }
-    calcSmartRoute();
-  }, [liveLocation, segmentETAs, route.segments]);
 
   // ── Proximity-based arrival notifications ─────────────────────
   const notifiedStations = useRef<Set<string>>(new Set());
@@ -712,103 +723,11 @@ export default function TrackingView({
     }
   }, [liveLocation, route.segments, enrichmentDone]);
 
-  // ── Journey progress notification (persistent) ─────────────────────
-  useEffect(() => {
-    try {
-      if (!liveLocation) {
-        addDebug('📊 progress: no liveLocation');
-        return;
-      }
-      const hasNotification = 'Notification' in window;
-      addDebug(`📊 progress: hasNotification=${hasNotification}, permission=${hasNotification ? Notification.permission : 'N/A'}`);
-      if (!hasNotification) {
-        addDebug('📊 progress: Notification not supported');
-        return;
-      }
-      // iOS PWA uses Service Worker showNotification, no permission needed
-      const isStandalone = window.matchMedia?.('(display-mode: standalone)').matches;
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
-        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      const isIOSPWA = isStandalone && isIOS;
-      if (!isIOSPWA && Notification.permission !== 'granted') {
-        addDebug('📊 progress: permission not granted');
-        return;
-      }
-      const notifEnabled = localStorage.getItem('chaser-notifications-enabled');
-      if (notifEnabled !== 'true') {
-        addDebug(`📊 progress: notifEnabled=${notifEnabled}`);
-        return;
-      }
-
-      // Calculate route progress using enriched coordinates
-      const enriched = enrichedRouteRef.current;
-      const enrichedSegs = enrichedSegmentsRef.current;
-      let origin = enriched?.origin;
-      let destination = enriched?.destination;
-      
-      // Fallback: crawl enriched segments for first/last valid non-zero coordinates
-      if (!origin || typeof origin.lat !== 'number' || origin.lat === 0) {
-        const segs = enrichedSegs || route.segments;
-        for (const seg of segs) {
-          if (seg.fromStop.location && typeof seg.fromStop.location.lat === 'number' && seg.fromStop.location.lat !== 0) {
-            origin = seg.fromStop.location;
-            break;
-          }
-        }
-      }
-      if (!destination || typeof destination.lat !== 'number' || destination.lat === 0) {
-        const segs = enrichedSegs || route.segments;
-        for (let i = segs.length - 1; i >= 0; i--) {
-          const seg = segs[i];
-          if (seg.toStop.location && typeof seg.toStop.location.lat === 'number' && seg.toStop.location.lat !== 0) {
-            destination = seg.toStop.location;
-            break;
-          }
-        }
-      }
-      if (!origin || !destination) {
-        addDebug('📊 progress: no origin/destination');
-        return;
-      }
-      if (typeof origin.lat !== 'number' || typeof origin.lng !== 'number' ||
-          typeof destination.lat !== 'number' || typeof destination.lng !== 'number') {
-        addDebug('📊 progress: lat/lng not set — need enrichSegmentWithCoords');
-        return;
-      }
-      addDebug(`📊 progress: origin=(${origin.lat.toFixed(4)},${origin.lng.toFixed(4)}) dest=(${destination.lat.toFixed(4)},${destination.lng.toFixed(4)})`);
-      if (origin.lat === 0 || origin.lng === 0 || destination.lat === 0 || destination.lng === 0) {
-        addDebug('📊 progress: zero coordinates — need enrichSegmentWithCoords');
-        return;
-      }
-
-      const totalDist = haversineMeters(origin, destination);
-      if (totalDist < 100) {
-        addDebug(`📊 progress: totalDist too short (${totalDist}m)`);
-        return;
-      }
-
-      // Calculate progress: project user position onto origin→destination line
-      const userDistFromOrigin = haversineMeters(origin, liveLocation);
-      const progress = Math.min(100, Math.max(0, Math.round((userDistFromOrigin / totalDist) * 100)));
-
-      // Build progress bar text
-      const filledBlocks = Math.round(progress / 10);
-      const emptyBlocks = 10 - filledBlocks;
-      const progressBar = '▓'.repeat(filledBlocks) + '░'.repeat(emptyBlocks);
-
-      const originName = route.segments[0]?.fromStop.nameZh || route.segments[0]?.fromStop.name || '起點';
-      const destName = route.segments[route.segments.length - 1]?.toStop.nameZh || route.segments[route.segments.length - 1]?.toStop.name || '終點';
-
-      const title = `趕車 · ${progress}%`;
-      const body = `${progressBar}\n${originName} → ${destName}`;
-
-      addDebug(`📊 progress: ${progress}% (${Math.round(userDistFromOrigin)}m / ${Math.round(totalDist)}m)`);
-
-      sendNotification(title, { body, tag: 'journey-progress', silent: true });
-    } catch (err) {
-      addDebug(`📊 progress error: ${err}`);
-    }
-  }, [liveLocation, route.segments, enrichmentDone]);
+  // ── Journey progress notification (persistent) — DISABLED by user request ──
+  // useEffect(() => {
+  //   ... (disabled) the feature was firing repeated progress notifications on iOS
+  //     causing lock screen spam. See commit for full original code.
+  // }, [liveLocation, route.segments, enrichmentDone]);
 
   // ── Push notification network: journey start + location + pagehide ──
   const WORKER_URL = 'https://chaser-auth.isearover.workers.dev';
@@ -912,118 +831,114 @@ export default function TrackingView({
       {onBack && (
         <button
           onClick={onBack}
-          className="absolute top-3 left-3 w-10 h-10 bg-black/70 backdrop-blur-xl rounded-full border border-white/15 shadow-lg flex items-center justify-center text-white text-lg"
+          className="absolute top-4 left-4 flex items-center gap-1.5 bg-black/60 backdrop-blur-xl rounded-xl border border-white/20 shadow-lg px-3 py-2 text-white text-xs font-medium hover:bg-black/70 active:scale-95 transition-all"
           style={{ zIndex: 1000 }}
         >
-          ←
+          <ChevronLeft size={16} strokeWidth={2.5} />
+          返回
         </button>
       )}
 
-      {/* ── LEFT COLUMN: Floating cards stacked with consistent gap ── */}
-      <div className="absolute top-14 left-3 flex flex-col gap-3" style={{ zIndex: 1000, maxWidth: 280 }}>
-        {/* ── ETA Floating Card ────────────────────────── */}
-        {showETAPanel && (
-          <div
-            className="w-full bg-black/80 backdrop-blur-xl rounded-xl border border-white/15 shadow-2xl overflow-hidden pointer-events-auto"
-          >
-          {/* ETA header */}
-          <div className="flex items-center justify-between px-2.5 pt-2 pb-1">
-            <div className="flex items-center gap-1.5">
-              <h3 className="text-[10px] font-semibold text-white">即時到站</h3>
-              {loading && (
-                <div className="w-2 h-2 border-[1.5px] border-blue-400 border-t-transparent rounded-full animate-spin" />
-              )}
-            </div>
-            <button
-              onClick={() => setShowETAPanel(false)}
-              className="text-gray-500 hover:text-white text-[10px] p-0.5"
-            >
-              ✕
-            </button>
+      {/* ── ETA Floating Card (top-right) ───────────────────── */}
+      {showETAPanel && (
+        <div
+          className="absolute top-4 right-3 bg-slate-800/80 border border-slate-700/60 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto"
+          style={{ zIndex: 1000, maxWidth: 280, minWidth: 200 }}
+        >
+        {/* ETA header */}
+        <div className="flex items-center justify-between px-2.5 pt-2 pb-1">
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-[10px] font-semibold text-gray-200">即時到站</h3>
+            {loading && (
+              <div className="w-2 h-2 border-[1.5px] border-blue-400 border-t-transparent rounded-full animate-spin" />
+            )}
           </div>
+          <button
+            onClick={() => setShowETAPanel(false)}
+            className="text-gray-500 hover:text-white text-[10px] p-0.5"
+          >
+            ✕
+          </button>
+        </div>
 
-          {/* ETA cards per segment - simplified: only 1 ETA per segment */}
-          <div className="px-2 pb-2 space-y-1">
-            {segmentETAs.map((seg) => {
-              const segData = route.segments.find(s => s.id === seg.segmentId);
-              const isMTR = segData?.route.type === 'mtr';
-              const destStationCode = isMTR ? segData?.toStop.id : null;
-              
-              // For MTR: only show ETAs going towards our destination direction
-              const fromStation = isMTR ? findStation(segData?.fromStop.id || '') || findStation(segData?.fromStop.nameZh || '') : null;
-              const toStation = isMTR ? findStation(segData?.toStop.id || '') || findStation(segData?.toStop.nameZh || '') : null;
-              
-              let filteredEtas = seg.etas;
-              if (isMTR && fromStation && toStation) {
-                filteredEtas = seg.etas.filter(e => {
-                  if (e.minutesAway < 0 && e.remark) return true;
-                  const destSt = findStation(e.destination);
-                  const terminalCode = destSt?.stationCode || e.destination;
-                  return isSameMTRDirection(segData!.route.name, fromStation.stationCode, toStation.stationCode, terminalCode);
-                });
-              }
-              
-              const validEtas = filteredEtas.filter(e => e.minutesAway >= 0);
-              const minEta = validEtas.length > 0 ? validEtas[0].minutesAway : null;
-              const firstEta = filteredEtas.find(e => e.minutesAway >= 0 || e.remark);
-              const borderColor =
-                minEta !== null && minEta <= 2
-                  ? 'border-red-500/50'
-                  : minEta !== null && minEta <= 5
-                    ? 'border-yellow-500/50'
-                    : 'border-white/10';
+        {/* ETA cards per segment */}
+        <div className="px-2 pb-2 space-y-1">
+          {segmentETAs.map((seg) => {
+            const segData = route.segments.find(s => s.id === seg.segmentId);
+            const isMTR = segData?.route.type === 'mtr';
+            const destStationCode = isMTR ? segData?.toStop.id : null;
+            
+            // For MTR: only show ETAs going towards our destination direction
+            const fromStation = isMTR ? findStation(segData?.fromStop.id || '') || findStation(segData?.fromStop.nameZh || '') : null;
+            const toStation = isMTR ? findStation(segData?.toStop.id || '') || findStation(segData?.toStop.nameZh || '') : null;
+            
+            let filteredEtas = seg.etas;
+            if (isMTR && fromStation && toStation) {
+              filteredEtas = seg.etas.filter(e => {
+                if (e.minutesAway < 0 && e.remark) return true;
+                const destSt = findStation(e.destination);
+                const terminalCode = destSt?.stationCode || e.destination;
+                return isSameMTRDirection(segData!.route.name, fromStation.stationCode, toStation.stationCode, terminalCode);
+              });
+            }
+            
+            const validEtas = filteredEtas.filter(e => e.minutesAway >= 0);
+            const minEta = validEtas.length > 0 ? validEtas[0].minutesAway : null;
+            const topTwo = filteredEtas.filter(e => e.minutesAway >= 0).slice(0, 2);
+            const remarkEta = topTwo.length === 0 ? filteredEtas.find(e => e.remark) : null;
+            const borderColor =
+              minEta !== null && minEta <= 2
+                ? 'border-red-500/50'
+                : minEta !== null && minEta <= 5
+                  ? 'border-yellow-500/50'
+                  : 'border-slate-600/40';
 
-              return (
-                <div key={seg.segmentId} className={`rounded-lg border px-2 py-1.5 bg-white/5 ${borderColor}`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-medium text-white truncate">
-                      {isMTR ? '🚇' : '🚌'} {seg.label}
+            return (
+              <div key={seg.segmentId} className={`rounded-xl border px-2 py-1.5 bg-slate-700/40 ${borderColor}`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-medium text-gray-200 truncate">
+                    {isMTR ? '🚇' : '🚌'} {seg.label}
+                  </span>
+                  {topTwo.length > 0 ? (
+                    <div className="flex items-center gap-1.5">
+                      {topTwo.map((eta, i) => (
+                        <span key={i} className="flex items-center gap-0.5">
+                          <span className={`text-[7px] font-bold ${
+                            eta.company === 'CTB' ? 'text-green-400' : 'text-blue-400'
+                          }`}>
+                            {eta.company === 'CTB' ? 'C' : 'K'}
+                          </span>
+                          <span className={`text-[10px] font-bold ${getEtaColor(eta.minutesAway)}`}>
+                            {eta.minutesAway === 0 ? '到站' : `${eta.minutesAway}'`}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  ) : remarkEta ? (
+                    <span className="text-[8px] text-gray-500 italic">
+                      {remarkEta.remark || '—'}
                     </span>
-                    {firstEta ? (
-                      firstEta.minutesAway >= 0 ? (
-                        <span className={`text-[10px] font-bold ${getEtaColor(firstEta.minutesAway)}`}>
-                          {firstEta.minutesAway === 0 ? '到站' : `${firstEta.minutesAway}'`}
-                        </span>
-                      ) : (
-                        <span className="text-[8px] text-gray-500 italic">
-                          {firstEta.remark || '—'}
-                        </span>
-                      )
-                    ) : (
-                      <span className="text-[8px] text-gray-500">無</span>
-                    )}
-                  </div>
-                  {minEta !== null && minEta <= 2 && (
-                    <p className="text-[8px] text-red-300 mt-0.5 font-medium">
-                      🏃 趕快！
-                    </p>
+                  ) : (
+                    <span className="text-[8px] text-gray-500">無</span>
                   )}
                 </div>
-              );
-            })}
-          </div>
+                {minEta !== null && minEta <= 2 && (
+                  <p className="text-[8px] text-red-300 mt-0.5 font-medium">
+                    🏃 趕快！
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
+      </div>
       )}
-
-      {/* ── Alternative Route Cards (in same left column, below ETA) ── */}
-      {alternatives.length > 0 && (
-        <div className="w-full space-y-2 pointer-events-auto">
-          {alternatives.map((seg) => (
-            <AlternativeRouteCard
-              key={seg.segmentId}
-              segment={seg}
-            />
-          ))}
-        </div>
-      )}
-
-      </div>{/* ── END left column ── */}
 
       {/* ── ETA toggle button (when left column hidden) ── */}
-      {!showETAPanel && alternatives.length === 0 && (
+      {!showETAPanel && (
         <button
           onClick={() => setShowETAPanel(true)}
-          className="absolute top-4 right-4 bg-black/70 backdrop-blur-xl text-white text-sm px-3.5 py-2 rounded-xl border border-white/15 shadow-lg"
+          className="absolute top-4 right-4 bg-slate-800/80 border border-slate-700/60 text-gray-200 text-sm px-3.5 py-2 rounded-2xl shadow-lg"
           style={{ zIndex: 1000 }}
         >
           🕐 ETA
@@ -1080,42 +995,45 @@ export default function TrackingView({
         )}
       </div>
 
-      {/* ── Smart Route Recommendation (badge, bottom-right above timeline) ─────────────────── */}
-      {smartRouteRec && smartRouteRec.bestAlternative && (
-        <div className="absolute bottom-40 right-3 pointer-events-auto" style={{ zIndex: 1002 }}>
-          {showSmartRouteDetail ? (
-            <div className="relative w-[280px]">
-              <SmartRouteCard recommendation={smartRouteRec} />
-              <button
-                onClick={() => setShowSmartRouteDetail(false)}
-                className="absolute top-1 right-1 text-gray-400 hover:text-white text-xs p-1"
-              >
-                ✕
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setShowSmartRouteDetail(true)}
-              className="bg-emerald-500/90 text-white text-[10px] font-bold px-2 py-1 rounded-full shadow-lg flex items-center gap-1"
-            >
-              🚀 {smartRouteRec.bestAlternative.name} 快 {smartRouteRec.bestAlternative.savedVsConfigured}min
-            </button>
-          )}
-        </div>
-      )}
+      {/* ── Bottom container: Timeline + Alt Cards + Bottom Bar ── */}
+      <div className="absolute bottom-0 left-0 right-0 flex flex-col" style={{ zIndex: 1000 }}>
+        {/* Timeline + Alt Cards (above bottom bar) */}
+        {(journeyEstimate || alternatives.length > 0) && (
+          <div className="flex flex-col gap-2 mb-1 px-3" style={{ zIndex: 1002 }}>
+            {/* Alternative Route Cards — right-aligned, above timeline */}
+            {alternatives.length > 0 && (
+              <div className="self-end flex flex-col gap-2 pointer-events-auto" style={{ maxWidth: 280 }}>
+                {/* Consolidated "last bus passed" warning — show once, not per segment */}
+                {alternatives.some(s => s.isLastBusPassed) && (
+                  <div className="bg-slate-800/80 border border-amber-500/30 rounded-2xl px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-400 text-sm">⚠️</span>
+                      <span className="text-xs font-medium text-amber-300">所選路線尾班車已過</span>
+                    </div>
+                  </div>
+                )}
+                {/* Individual alternative cards */}
+                {alternatives.filter(s => s.alternatives.length > 0).map((seg) => (
+                  <AlternativeRouteCard
+                    key={seg.segmentId}
+                    segment={seg}
+                  />
+                ))}
+              </div>
+            )}
+            {/* Smart Journey Timeline — below alt cards */}
+            {journeyEstimate && (
+              <SmartJourneyTimeline
+                recommendation={journeyEstimate}
+                expanded={showTimelineDetail}
+                onToggle={() => setShowTimelineDetail(prev => !prev)}
+              />
+            )}
+          </div>
+        )}
 
-      {/* ── Smart Journey Timeline ────────────────────────────────────── */}
-      {journeyEstimate && (
-        <SmartJourneyTimeline
-          recommendation={journeyEstimate}
-          expanded={showTimelineDetail}
-          onToggle={() => setShowTimelineDetail(prev => !prev)}
-        />
-      )}
-
-      {/* ── Bottom bar ───────────────────────────────────────────── */}
-      <div className="absolute bottom-0 left-0 right-0" style={{ zIndex: 1000 }}>
-        <div className="bg-black/80 backdrop-blur-lg border-t border-white/10 px-4 py-3 safe-area-bottom">
+        {/* Bottom bar */}
+        <div className="bg-slate-800/90 border-t border-slate-700/60 px-4 py-3 safe-area-bottom">
           <div className="flex items-center justify-between max-w-md mx-auto">
             <div className="flex-1 min-w-0">
               <p className="text-xs text-gray-400">

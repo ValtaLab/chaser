@@ -277,6 +277,17 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
   const handleSave = () => {
     let savedRoute: CommuteRoute | undefined;
 
+    // Helper: get operator based on route type and validation company
+    const getOperator = (seg: typeof segments[0], index: number): 'mtr' | 'gmb' | 'kmb' | 'citybus' => {
+      if (seg.routeType === 'mtr') return 'mtr';
+      if (seg.routeType === 'minibus') return 'gmb';
+      if (seg.routeType === 'tram') return 'mtr';
+      // For bus: use validation company instead of hardcoded 'kmb'
+      const validation = validations.get(index);
+      if (validation?.company === 'CTB') return 'citybus';
+      return 'kmb';
+    };
+
     // Helper: resolve stop coordinates
     const getStopLocation = (seg: typeof segments[0], stopId: string, stopName: string): { lat: number; lng: number } => {
       // MTR: look up from MTR_STATIONS
@@ -306,7 +317,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
             id: editRoute.segments[index]?.route.id || `r-${index}`,
             name: seg.routeName,
             type: seg.routeType,
-            operator: (seg.routeType === 'mtr' ? 'mtr' : seg.routeType === 'minibus' ? 'gmb' : seg.routeType === 'tram' ? 'mtr' : 'kmb') as 'mtr' | 'gmb' | 'kmb',
+            operator: getOperator(seg, index),
             stops: [],
           },
           fromStop: {
@@ -339,7 +350,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
             id: `r-${index}`,
             name: seg.routeName,
             type: seg.routeType,
-            operator: (seg.routeType === 'mtr' ? 'mtr' : seg.routeType === 'minibus' ? 'gmb' : seg.routeType === 'tram' ? 'mtr' : 'kmb') as 'mtr' | 'gmb' | 'kmb',
+            operator: getOperator(seg, index),
             stops: [],
           },
           fromStop: {
@@ -384,7 +395,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
 
   const getInputClasses = (index: number) => {
     const validation = validations.get(index);
-    const base = 'w-full bg-white/10 border rounded-lg px-3 py-2 text-white text-sm placeholder-gray-400 focus:outline-none';
+    const base = 'w-full bg-white border rounded-lg px-3 py-2 text-gray-900 text-sm placeholder-gray-400 focus:outline-none';
     if (validation?.status === 'valid') {
       return `${base} border-green-500 focus:ring-2 focus:ring-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]`;
     }
@@ -394,16 +405,16 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
     if (validation?.status === 'checking') {
       return `${base} border-yellow-500/50 focus:ring-2 focus:ring-yellow-500`;
     }
-    return `${base} border-white/20 focus:ring-2 focus:ring-blue-500`;
+    return `${base} border-gray-200 focus:ring-2 focus:ring-blue-500`;
   };
 
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h2 className="text-2xl font-bold text-white">
+        <h2 className="text-2xl font-bold text-gray-900">
           {editRoute ? '編輯路線' : '設定路線'}
         </h2>
-        <p className="text-gray-400 mt-2">
+        <p className="text-gray-500 mt-2">
           {editRoute ? '修改你的通勤路線' : '設定你的通勤路線'}
         </p>
       </div>
@@ -411,26 +422,26 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
       {step === 'name' && (
         <div className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">路線名稱</label>
+            <label className="block text-sm font-medium text-gray-600 mb-2">路線名稱</label>
             <input
               type="text"
               value={routeName}
               onChange={(e) => setRouteName(e.target.value)}
               placeholder="例：返工路線"
-              className="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-2">方向</label>
+            <label className="block text-sm font-medium text-gray-600 mb-2">方向</label>
             <div className="grid grid-cols-2 gap-3">
-              <button onClick={() => setDirection('to_work')} className={`p-4 rounded-lg border-2 transition-colors ${direction === 'to_work' ? 'border-blue-500 bg-blue-500/20' : 'border-white/20 bg-white/5'}`}>
+              <button onClick={() => setDirection('to_work')} className={`p-4 rounded-lg border-2 transition-colors ${direction === 'to_work' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'}`}>
                 <span className="text-2xl">🏢</span>
-                <p className="text-white mt-2">返工</p>
+                <p className={`mt-2 ${direction === 'to_work' ? 'text-blue-700' : 'text-gray-700'}`}>返工</p>
               </button>
-              <button onClick={() => setDirection('to_home')} className={`p-4 rounded-lg border-2 transition-colors ${direction === 'to_home' ? 'border-blue-500 bg-blue-500/20' : 'border-white/20 bg-white/5'}`}>
+              <button onClick={() => setDirection('to_home')} className={`p-4 rounded-lg border-2 transition-colors ${direction === 'to_home' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'}`}>
                 <span className="text-2xl">🏠</span>
-                <p className="text-white mt-2">放工</p>
+                <p className={`mt-2 ${direction === 'to_home' ? 'text-blue-700' : 'text-gray-700'}`}>放工</p>
               </button>
             </div>
           </div>
@@ -444,7 +455,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
       {step === 'segments' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">轉乘路段</h3>
+            <h3 className="text-lg font-semibold text-gray-900">轉乘路段</h3>
             <button onClick={addSegment} className="bg-green-600 hover:bg-green-700 text-white text-sm font-medium py-2 px-4 rounded-lg transition-colors">
               + 新增路段
             </button>
@@ -452,13 +463,13 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
 
           {editRoute && (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">方向</label>
+              <label className="block text-sm font-medium text-gray-600 mb-2">方向</label>
               <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => setDirection('to_work')} className={`p-3 rounded-lg border-2 transition-colors text-sm ${direction === 'to_work' ? 'border-blue-500 bg-blue-500/20' : 'border-white/20 bg-white/5'}`}>
-                  🏢 返工
+                <button onClick={() => setDirection('to_work')} className={`p-3 rounded-lg border-2 transition-colors text-sm ${direction === 'to_work' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'}`}>
+                  <span className={`${direction === 'to_work' ? 'text-blue-700' : 'text-gray-700'}`}>🏢 返工</span>
                 </button>
-                <button onClick={() => setDirection('to_home')} className={`p-3 rounded-lg border-2 transition-colors text-sm ${direction === 'to_home' ? 'border-blue-500 bg-blue-500/20' : 'border-white/20 bg-white/5'}`}>
-                  🏠 放工
+                <button onClick={() => setDirection('to_home')} className={`p-3 rounded-lg border-2 transition-colors text-sm ${direction === 'to_home' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white'}`}>
+                  <span className={`${direction === 'to_home' ? 'text-blue-700' : 'text-gray-700'}`}>🏠 放工</span>
                 </button>
               </div>
             </div>
@@ -477,16 +488,16 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                 const currentDir = selectedDirection.get(index) || 1;
 
                 return (
-                  <div key={index} className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-3">
+                  <div key={index} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-300">路段 {index + 1}</span>
+                      <span className="text-sm font-medium text-gray-700">路段 {index + 1}</span>
                       <button onClick={() => removeSegment(index)} className="text-red-400 hover:text-red-300 text-sm">刪除</button>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">交通工具</label>
-                        <select value={seg.routeType} onChange={(e) => updateSegment(index, 'routeType', e.target.value)} className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <label className="block text-xs text-gray-500 mb-1">交通工具</label>
+                        <select value={seg.routeType} onChange={(e) => updateSegment(index, 'routeType', e.target.value)} className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                           <option value="bus">🚌 巴士</option>
                           <option value="mtr">🚇 港鐵</option>
                           <option value="minibus">🚐 小巴</option>
@@ -494,7 +505,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                         </select>
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-400 mb-1">路線號碼</label>
+                        <label className="block text-xs text-gray-500 mb-1">路線號碼</label>
                         {seg.routeType === 'mtr' ? (
                           <select
                             value={seg.routeName}
@@ -518,7 +529,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                                 setValidations(prev => new Map(prev).set(index, { status: 'idle' }));
                               }
                             }}
-                            className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                           >
                             <option value="">選擇線路</option>
                             {MTR_LINES.map(line => (
@@ -545,12 +556,12 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                               )}
                             </div>
                             {validation?.status === 'valid' && validation.company && (
-                              <p className="text-xs text-green-400 mt-1">
+                              <p className="text-xs text-green-600 mt-1">
                                 {validation.company === 'KMB' ? '九巴' : validation.company === 'CTB' ? '城巴' : '小巴'} ✓
                               </p>
                             )}
                             {validation?.status === 'invalid' && (
-                              <p className="text-xs text-red-400 mt-1">找不到此路線</p>
+                              <p className="text-xs text-red-500 mt-1">找不到此路線</p>
                             )}
                           </>
                         )}
@@ -560,7 +571,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                     {/* Direction selector - compact inline toggle */}
                     {validation?.status === 'valid' && dirs.length > 0 && (seg.routeType === 'bus' || seg.routeType === 'minibus') && (
                       <div className="flex items-center gap-2">
-                        <label className="text-xs text-gray-400 shrink-0">方向</label>
+                        <label className="text-xs text-gray-500 shrink-0">方向</label>
                         <div className="flex gap-1 flex-wrap">
                           {dirs.map((d) => (
                             <button
@@ -569,7 +580,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                                 currentDir === d.seq
                                   ? 'bg-blue-500 text-white'
-                                  : 'bg-white/10 text-gray-300 hover:bg-white/20'
+                                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                               }`}
                             >
                               {d.orig} → {d.dest}
@@ -583,7 +594,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                     {(seg.routeType === 'mtr' || seg.routeType === 'tram' || stops.length > 0) && (
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-xs text-gray-400 mb-1">上車站</label>
+                          <label className="block text-xs text-gray-500 mb-1">上車站</label>
                           {stops.length > 0 ? (
                             <select
                               value={seg.fromStop}
@@ -603,7 +614,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                                   if (timer) clearTimeout(timer);
                                 }
                               }}
-                              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-32 overflow-y-auto"
+                              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-32 overflow-y-auto"
                             >
                               <option value="">選擇車站</option>
                               {stops.map((s) => (
@@ -616,12 +627,12 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                               value={seg.fromStop}
                               onChange={(e) => updateSegment(index, 'fromStop', e.target.value)}
                               placeholder="例：旺角站"
-                              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           )}
                         </div>
                         <div>
-                          <label className="block text-xs text-gray-400 mb-1">落車站</label>
+                          <label className="block text-xs text-gray-500 mb-1">落車站</label>
                           {stops.length > 0 ? (
                             <select
                               value={seg.toStop}
@@ -635,7 +646,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                                 };
                                 setSegments(updated);
                               }}
-                              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-32 overflow-y-auto"
+                              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 max-h-32 overflow-y-auto"
                             >
                               <option value="">選擇車站</option>
                               {stops.map((s) => (
@@ -648,7 +659,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                               value={seg.toStop}
                               onChange={(e) => updateSegment(index, 'toStop', e.target.value)}
                               placeholder="例：中環站"
-                              className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-900 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           )}
                         </div>
@@ -661,7 +672,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
           )}
 
           <div className="flex gap-3">
-            <button onClick={() => editRoute ? handleDone() : setStep('name')} className="flex-1 bg-white/10 hover:bg-white/20 text-white font-medium py-3 px-4 rounded-lg transition-colors">
+            <button onClick={() => editRoute ? handleDone() : setStep('name')} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-3 px-4 rounded-lg transition-colors">
               {editRoute ? '取消' : '返回'}
             </button>
             <button onClick={handleSave} disabled={segments.length === 0} className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-medium py-3 px-4 rounded-lg transition-colors">
@@ -674,10 +685,10 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
       {step === 'confirm' && (
         <div className="text-center space-y-4">
           <div className="text-6xl">✅</div>
-          <h3 className="text-xl font-semibold text-white">
+          <h3 className="text-xl font-semibold text-gray-900">
             {editRoute ? '路線已更新！' : '路線已儲存！'}
           </h3>
-          <p className="text-gray-400">「{routeName}」已成功{editRoute ? '更新' : '建立'}</p>
+          <p className="text-gray-500">「{routeName}」已成功{editRoute ? '更新' : '建立'}</p>
           <button onClick={handleDone} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors">
             {editRoute ? '返回' : '建立另一條路線'}
           </button>

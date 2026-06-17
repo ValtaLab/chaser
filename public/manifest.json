@@ -1,7 +1,7 @@
 {
-  "name": "趕車 Chaser",
-  "short_name": "趕車",
-  "description": "香港智能轉乘助手 - 減少等車時間、避免錯過班次",
+  "name": "\u8d95\u8eca Chaser",
+  "short_name": "\u8d95\u8eca",
+  "description": "\u9999\u6e2f\u667a\u80fd\u8f49\u4e58\u52a9\u624b - \u6e1b\u5c11\u7b49\u8eca\u6642\u9593\u3001\u907f\u514d\u932f\u904e\u73ed\u6b21",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",
@@ -9,13 +9,13 @@
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icon-192x192.png",
+      "src": "/icon-192-v2.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "/icon-512x512.png",
+      "src": "/icon-512-v2.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"

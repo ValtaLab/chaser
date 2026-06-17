@@ -14,6 +14,7 @@ export interface TransportETA {
   minutesAway: number;
   platform?: string;
   remark?: string;
+  company?: 'KMB' | 'CTB';
 }
 
 // Single stop ETA fetch (auto-detects transport type)
@@ -73,6 +74,7 @@ export async function fetchETA(
     destination: eta.destination,
     minutesAway: eta.minutesAway,
     remark: eta.remark || undefined,
+    company: eta.company,
   }));
 }
 

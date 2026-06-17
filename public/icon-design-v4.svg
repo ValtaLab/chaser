@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Gradient: blue to lighter blue -->
+    <linearGradient id="cGrad4" x1="379" y1="140" x2="379" y2="370" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+
+  <!-- C shape: clean stroked arc, butt caps for precise marker placement -->
+  <path d="M 379,170 A 150,150 0 1,0 379,342"
+        stroke="url(#cGrad4)" stroke-width="44" stroke-linecap="butt" fill="none"/>
+
+  <!-- Start marker: bold filled circle -->
+  <circle cx="379" cy="170" r="18" fill="#38bdf8"/>
+
+  <!-- Destination marker: diamond (rotated square) -->
+  <rect x="369" y="332" width="20" height="20" rx="2.5"
+        transform="rotate(45, 379, 342)"
+        fill="#a78bfa"/>
+</svg>

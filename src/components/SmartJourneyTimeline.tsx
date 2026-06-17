@@ -8,6 +8,7 @@ interface SmartJourneyTimelineProps {
   recommendation: SmartRouteRecommendation;
   expanded: boolean;
   onToggle: () => void;
+  fixed?: boolean;  // if true, use absolute positioning (legacy mode)
 }
 
 // ─── Transport emoji mapping ──────────────────────────────────────────
@@ -71,6 +72,7 @@ export default function SmartJourneyTimeline({
   recommendation,
   expanded,
   onToggle,
+  fixed = false,
 }: SmartJourneyTimelineProps) {
   const { segments, totalMinutes, canMakeIt, confidence } = recommendation;
 
@@ -82,13 +84,13 @@ export default function SmartJourneyTimeline({
 
   return (
     <div
-      className="absolute left-3 right-3 bottom-20 z-[1000] max-w-[calc(100%-24px)]"
+      className={`${fixed ? 'absolute left-3 right-3 bottom-20' : 'w-full'} z-[1000] max-w-[calc(100%-24px)]${fixed ? '' : ' mx-3'}`}
       onClick={onToggle}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggle(); }}
     >
-      <div className="bg-black/80 backdrop-blur-xl rounded-xl border border-white/15 p-1.5 cursor-pointer select-none">
+      <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-1.5 cursor-pointer select-none">
         {/* ── Collapsed: horizontal pill timeline ─────────────────── */}
         <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide">
           {segments.map((seg, i) => (

@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Gradient flowing along the C curve: sky blue → blue → purple -->
+    <linearGradient id="cGrad" x1="379" y1="140" x2="379" y2="370" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="40%" stop-color="#60a5fa"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+    <!-- Glow for the location pin -->
+    <filter id="locGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Flag glow -->
+    <filter id="flagGlow" x="-80%" y="-50%" width="260%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="112" fill="#0f172a"/>
+
+  <!-- C shape - thick stroked arc with gradient -->
+  <path d="M 379,170 A 150,150 0 1,0 379,342"
+        stroke="url(#cGrad)" stroke-width="50" stroke-linecap="round" fill="none"/>
+
+  <!-- ============================================ -->
+  <!-- START MARKER: Location pin with arrow        -->
+  <!-- Classic location pin with an upward arrow    -->
+  <!-- suggesting "you are here" / depart now       -->
+  <!-- ============================================ -->
+  <g filter="url(#locGlow)" transform="translate(379, 152)">
+    <!-- Pin tail pointing down -->
+    <path d="M 0,32 Q -10,18 -10,12 A 10,10 0 0,1 10,12 Q 10,18 0,32 Z"
+          fill="#38bdf8" opacity="0.85"/>
+    <!-- Pin head (circle) -->
+    <circle cx="0" cy="-2" r="18" fill="#38bdf8"/>
+    <!-- Inner dark circle -->
+    <circle cx="0" cy="-2" r="10" fill="#0f172a" opacity="0.45"/>
+    <!-- Upward arrow inside the pin head -->
+    <path d="M 0,-16 L 6,-8 L 3,-8 L 3,-1 L -3,-1 L -3,-8 L -6,-8 Z" 
+          fill="#ffffff" opacity="0.9"/>
+  </g>
+
+  <!-- ============================================ -->
+  <!-- DESTINATION MARKER: Flag / Checkpoint        -->
+  <!-- Pennant flag on a pole - larger and more     -->
+  <!-- prominent to be visible at all sizes         -->
+  <!-- ============================================ -->
+  <g filter="url(#flagGlow)" transform="translate(379, 342)">
+    <!-- Flag pole -->
+    <line x1="0" y1="-28" x2="0" y2="24" stroke="#a78bfa" stroke-width="3" stroke-linecap="round"/>
+    <!-- Flag body (pennant shape) - larger -->
+    <path d="M 2,-26 L 26,-18 L 2,-10 Z" fill="#a78bfa" opacity="0.85"/>
+    <!-- Flag detail stripes -->
+    <line x1="7" y1="-24" x2="7" y2="-12" stroke="#ffffff" stroke-width="1.2" opacity="0.25"/>
+    <line x1="12" y1="-22" x2="12" y2="-12" stroke="#ffffff" stroke-width="1.2" opacity="0.25"/>
+    <line x1="17" y1="-20" x2="17" y2="-12" stroke="#ffffff" stroke-width="1.2" opacity="0.25"/>
+    <!-- Pole base dot -->
+    <circle cx="0" cy="24" r="3.5" fill="#a78bfa"/>
+    <!-- Pole top dot -->
+    <circle cx="0" cy="-28" r="3" fill="#a78bfa" opacity="0.7"/>
+  </g>
+</svg>

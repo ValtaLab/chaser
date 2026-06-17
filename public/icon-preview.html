@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chaser Icon — V1a Refined</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0f172a;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding: 40px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 { color: #f1f5f9; font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: #64748b; font-size: 13px; margin-bottom: 40px; }
+
+  .showcase {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+  }
+
+  .main-icon {
+    width: 360px; height: 360px;
+    border-radius: 80px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+    border: 1px solid #1e293b;
+    position: relative;
+  }
+  .main-icon img { width: 100%; height: 100%; display: block; }
+
+  .specs {
+    display: flex;
+    gap: 40px;
+    padding: 20px 32px;
+    background: #0a0f1a;
+    border-radius: 16px;
+    border: 1px solid #1e293b;
+  }
+  .specs .col { text-align: center; }
+  .specs .col .val { color: #e2e8f0; font-size: 14px; font-weight: 600; }
+  .specs .col .key { color: #64748b; font-size: 11px; margin-top: 2px; }
+
+  .before-after {
+    display: flex;
+    gap: 24px;
+    align-items: center;
+  }
+  .ba-item {
+    text-align: center;
+  }
+  .ba-item img {
+    width: 160px; height: 160px;
+    border-radius: 36px;
+    display: block;
+    margin-bottom: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    border: 1px solid #1e293b;
+  }
+  .ba-item .lbl { color: #64748b; font-size: 12px; }
+  .ba-arrow { color: #475569; font-size: 28px; }
+
+  .phone-mockup {
+    background: #000;
+    border-radius: 48px;
+    padding: 12px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.8);
+    width: 220px;
+  }
+  .phone-mockup .screen {
+    background: linear-gradient(180deg, #1a1a2e, #0f172a);
+    border-radius: 36px;
+    padding: 16px;
+    min-height: 380px;
+  }
+  .phone-mockup .time {
+    color: white; font-size: 13px; font-weight: 600;
+    text-align: center; margin-bottom: 16px; opacity: 0.8;
+  }
+  .phone-mockup .icon-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .phone-mockup .icon-grid .app { text-align: center; }
+  .phone-mockup .icon-grid .app img {
+    width: 52px; height: 52px;
+    border-radius: 13px;
+    display: block; margin: 0 auto 3px;
+  }
+  .phone-mockup .icon-grid .app .n { color: #94a3b8; font-size: 9px; }
+  .phone-mockup .icon-grid .app .highlight {
+    box-shadow: 0 0 0 2px #60a5fa;
+  }
+  .phone-mockup .dock {
+    display: flex; justify-content: center; gap: 14px;
+    margin-top: 14px; padding: 10px 14px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 20px; backdrop-filter: blur(20px);
+  }
+  .phone-mockup .dock img {
+    width: 48px; height: 48px; border-radius: 12px;
+  }
+
+  .footer { color: #334155; font-size: 11px; margin-top: 24px; }
+</style>
+</head>
+<body>
+  <h1>Chaser Icon — V1a 強化版</h1>
+  <p class="subtitle">粗 C + 加大 Pin + Bullseye</p>
+
+  <div class="showcase">
+    <div class="main-icon">
+      <img src="icon-design-v1a.png">
+    </div>
+
+    <div class="specs">
+      <div class="col">
+        <div class="val">50px</div>
+        <div class="key">C Stroke 粗度</div>
+      </div>
+      <div class="col">
+        <div class="val">40px</div>
+        <div class="key">Pin 半徑</div>
+      </div>
+      <div class="col">
+        <div class="val">40px</div>
+        <div class="key">Bullseye outer</div>
+      </div>
+    </div>
+
+    <div class="before-after">
+      <div class="ba-item">
+        <img src="icon-design-v1.png">
+        <div class="lbl">之前</div>
+      </div>
+      <div class="ba-arrow">→</div>
+      <div class="ba-item">
+        <img src="icon-design-v1a.png">
+        <div class="lbl">之後</div>
+      </div>
+    </div>
+
+    <!-- Phone mockup -->
+    <div class="phone-mockup">
+      <div class="screen">
+        <div class="time">9:41</div>
+        <div class="icon-grid">
+          <div class="app"><img src="icon-192x192.png"><div class="n">趕車</div></div>
+          <div class="app"><img src="icon-192x192.png"><div class="n">地圖</div></div>
+          <div class="app"><img src="icon-192x192.png"><div class="n">音樂</div></div>
+          <div class="app"><img src="icon-192x192.png"><div class="n">相機</div></div>
+          <div class="app"><img src="icon-192x192.png"><div class="n">設定</div></div>
+          <div class="app"><img src="icon-192x192.png"><div class="n">WhatsApp</div></div>
+        </div>
+        <div class="dock">
+          <img src="icon-192x192.png">
+          <img src="icon-192x192.png">
+          <img src="icon-192x192.png">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="footer">Designer: kimi-k2.7-code · opencode-go</p>
+</body>
+</html>

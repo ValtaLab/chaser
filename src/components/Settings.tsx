@@ -184,8 +184,8 @@ export default function Settings({ onClose }: SettingsProps) {
         </div>
         <div className="p-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-sm">
-              <span className="text-lg">🏃</span>
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-sm overflow-hidden">
+              <img src="/icon-192-v2.png" alt="Chaser" className="w-full h-full object-cover" />
             </div>
             <div>
               <p className="text-gray-900 text-sm font-semibold">趕車 Chaser</p>

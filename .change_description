@@ -1,1 +1,1 @@
-feat: add push notification background service — Web Push + worker location relay + SW fetch pending notification
+fix: AlternativeRouteCard moved to bottom-right, above timeline in shared flex container

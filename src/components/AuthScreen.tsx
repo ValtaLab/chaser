@@ -34,8 +34,26 @@ export default function AuthScreen() {
       <div className="w-full max-w-sm relative z-10">
         {/* Logo */}
         <div className="text-center mb-10 animate-slide-up">
-          <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-2xl shadow-blue-600/40 mb-5 animate-float">
-            <span className="text-4xl">🏃</span>
+          <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-2xl shadow-blue-600/40 mb-5 overflow-hidden">
+            <svg viewBox="0 0 512 512" className="w-14 h-14">
+              <defs>
+                <linearGradient id="logoGrad" x1="379" y1="140" x2="379" y2="370" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#38bdf8"/>
+                  <stop offset="40%" stop-color="#60a5fa"/>
+                  <stop offset="100%" stop-color="#a78bfa"/>
+                </linearGradient>
+              </defs>
+              <path d="M 379,170 A 150,150 0 1,0 379,342" stroke="url(#logoGrad)" stroke-width="50" stroke-linecap="round" fill="none"/>
+              <circle cx="379" cy="170" r="40" fill="#38bdf8"/>
+              <circle cx="379" cy="170" r="22" fill="#0f172a" opacity="0.3"/>
+              <circle cx="379" cy="170" r="10" fill="white" opacity="0.9"/>
+              <g transform="translate(379, 342)">
+                <circle cx="0" cy="0" r="40" fill="none" stroke="#a78bfa" stroke-width="5" opacity="0.45"/>
+                <circle cx="0" cy="0" r="28" fill="none" stroke="#a78bfa" stroke-width="4" opacity="0.65"/>
+                <circle cx="0" cy="0" r="16" fill="none" stroke="#a78bfa" stroke-width="3.5"/>
+                <circle cx="0" cy="0" r="7" fill="#a78bfa"/>
+              </g>
+            </svg>
           </div>
           <h1 className="text-3xl font-bold text-gray-900 tracking-tight">趕車</h1>
           <p className="text-sm text-gray-400 mt-1.5 font-medium tracking-wide">Chaser</p>

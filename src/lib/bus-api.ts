@@ -175,6 +175,83 @@ export async function getStopETA(
     .sort((a, b) => a.minutesAway - b.minutesAway);
 }
 
+// ============ Citybus Stop ID Lookup (for joint-operated routes) ============
+
+// Module-level cache: key=`${route}_${direction}`, value=Map<stopNameZh, stopId>
+const citybusStopNameCache = new Map<string, Map<string, string>>();
+
+/**
+ * Find a Citybus stop ID for a given route, direction, and Chinese stop name.
+ * Used for joint-operated routes (聯營線) like 307P where both KMB and Citybus serve the same route.
+ * Results are cached to avoid repeated API calls.
+ */
+export async function findCitybusStopIdByRouteAndName(
+  route: string,
+  stopNameZh: string,
+  direction: 'I' | 'O'
+): Promise<string | null> {
+  const cacheKey = `${route.toUpperCase()}_${direction}`;
+
+  // Build cache if not exists
+  if (!citybusStopNameCache.has(cacheKey)) {
+    const stops = await getCitybusRouteStops(route, direction);
+    const nameMap = new Map<string, string>();
+
+    for (const s of stops) {
+      try {
+        const info = await getCitybusStopInfo(s.stop);
+        if (info?.name_tc) {
+          nameMap.set(info.name_tc, s.stop);
+          // Also store without parenthetical suffix like "(TP930)"
+          const baseName = info.name_tc.replace(/\s*\(.*?\)\s*$/, '').trim();
+          if (baseName !== info.name_tc) {
+            nameMap.set(baseName, s.stop);
+          }
+          // Also store without comma suffix like "港運城, 英皇道" → "港運城"
+          const commaName = info.name_tc.replace(/\s*,\s*.*$/, '').trim();
+          if (commaName !== info.name_tc && commaName !== baseName && !nameMap.has(commaName)) {
+            nameMap.set(commaName, s.stop);
+          }
+        }
+      } catch {
+        // skip stops that fail to load
+      }
+    }
+    citybusStopNameCache.set(cacheKey, nameMap);
+  }
+
+  const nameMap = citybusStopNameCache.get(cacheKey)!;
+
+  // Helper: strip trailing parenthetical suffixes like "(TP340)", "(LT410)"
+  const stripSuffix = (s: string) => s.replace(/\s*\(.*?\)\s*$/, '').trim();
+
+  // Exact match first
+  if (nameMap.has(stopNameZh)) return nameMap.get(stopNameZh)!;
+
+  // Try base name (KMB often appends (TPxxx) suffixes to Tai Po stops)
+  const baseStopName = stripSuffix(stopNameZh);
+  if (baseStopName !== stopNameZh && nameMap.has(baseStopName)) {
+    return nameMap.get(baseStopName)!;
+  }
+
+  // Then try startsWith/contains matching
+  // KMB sometimes returns names without suffixes while Citybus has them
+  for (const [name, id] of nameMap) {
+    if (name.startsWith(stopNameZh) || stopNameZh.startsWith(name)) return id;
+    if (name.includes(stopNameZh) || stopNameZh.includes(name)) return id;
+  }
+
+  // Retry with base name if original had a suffix (catches "(TPxxx)" → ", Area" cases)
+  if (baseStopName !== stopNameZh) {
+    for (const [name, id] of nameMap) {
+      if (name.startsWith(baseStopName) || baseStopName.startsWith(name)) return id;
+      if (name.includes(baseStopName) || baseStopName.includes(name)) return id;
+    }
+  }
+
+  return null;
+}
+
 // ============ Route Search ============
 
 export async function searchKMBStops(

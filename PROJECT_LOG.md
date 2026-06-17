@@ -2,15 +2,15 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-06-16T13:30:00+08:00
-last_version: ios-pwa-notification-fix-v3
+last_deploy: 2026-06-17T23:30:00+08:00
+last_version: icon-v1a-header-png
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
 
-## 🚀 最新狀態 (2026-06-16)
-**版本:** `mtr-line-name-chinese-v1` | **部署時間:** ~11:30 HKT | **狀態:** 運行中  
+## 🚀 最新狀態 (2026-06-17)
+**版本:** `icon-v1a-header-png` | **部署時間:** ~23:30 HKT | **狀態:** 運行中  
 **部署地址:** https://master.chaser-6ta.pages.dev
 
 ### 核心功能
@@ -378,3 +378,117 @@ last_update_by: HermesBPi
 3. **通知權限** — `Notification.permission` 一旦 denied 就無法由 JS 恢復，用戶需去瀏覽器設定手動允許。
 4. **舊路線座標** — 2026-06-12 之前創建嘅路線可能冇巴士站座標（`{lat: 0, lng: 0}`），已用 `enrichSegmentWithCoords` runtime 修復，但需要用戶重新開旅程先會生效。
 5. **Service Worker cache** — iOS PWA 嘅 SW cache 好 persistent，uninstall app 唔會清到。如要強制更新，需去 **設定 → Safari → 進階 → 網站資料** 刪除 domain 資料。
+
+## 2026-06-17 — Fix: Joint-operated routes missing Citybus ETAs (307P)
+
+**Problem**: 307P (聯營線 by KMB + Citybus) only showed KMB scheduled departures. Citybus ETAs were completely missing.
+
+**Root cause (2 bugs)**:
+1. `RouteSetup.tsx` hardcoded `operator: 'kmb'` for ALL bus routes in `handleSave()` — even Citybus-only routes. KMB found first during validation → only KMB stop IDs stored.
+2. `fetchAllETAs` in `TrackingView.tsx` only fetched ETAs from the stored operator (always 'kmb') → Citybus ETAs never fetched.
+
+**Fix**:
+1. `RouteSetup.tsx` — Added `getOperator()` helper that checks `validation.company` to determine actual operator. `'CTB'` → `'citybus'`, else `'kmb'`.
+2. `bus-api.ts` — Added `findCitybusStopIdByRouteAndName()` with module-level cache. Matches Citybus stop IDs by stop name for joint-operated routes.
+3. `TrackingView.tsx` — In `fetchAllETAs`, for KMB bus segments, also checks if Citybus serves the route. If yes, finds matching Citybus stop ID → fetches Citybus ETAs → merges with KMB ETAs sorted by time.
+
+**Verification**: Build OK, deployed, 0 JS errors, fix confirmed in deployed JS chunk.
+
+## 2026-06-17 — Enhanced MTR alternative search for bus routes
+
+**Problem**: `findMTRAlternatives` only checked stations within 800m of origin (too restrictive for 大埔/郊区).
+`findConnectingLines` was missing EAL (東鐵綫), TML (屯馬綫), SIL (南港島綫), DRL (迪士尼綫).
+
+**Fix**:
+1. `findConnectingLines`: Updated `allLines` from `['TWL','KTL','ISL','TKL','SCL','TCL','AEL']` to `['TWL','KTL','ISL','TKL','EAL','TML','SIL','DRL','AEL']` — added EAL, TML, SIL, DRL; removed SCL, TCL (non-existent in data).
+2. `findMTRAlternatives`: Extended search radius from 800m to 2000m practical walk. Proper total time comparison (walkToMTR + wait + ride + walkFromMTR vs busWait + busRide). Added coordinate validation guard.
+3. Direction label now uses `getMTRLineName()` for Chinese line names.
+
+**Example**: 大埔中心總站 → 國際調解院
+- Walk 186m to 大埔墟站 → EAL → 會展站 (147m from destination) → total ~26min vs bus ~44min
+- Previously: 0 alternatives found (EAL missing from connecting lines)
+- Now: Should recommend EAL 東鐵綫 大埔墟→會展
+
+## 2026-06-17 — Added mixed transport alternatives (bus→MTR)
+
+**What**: New `findMixedAlternatives()` function that finds bus→MTR combinations.
+
+**How it works**:
+1. Gets area keyword from user's stop name (e.g. "大埔" from "大埔中心總站")
+2. Fetches ALL KMB routes (cached) → filters by origin area matching → skips user's route
+3. For each candidate route, checks if destination text contains an MTR station name
+4. If the MTR station connects toward user's destination (same line), calculates total time:
+   bus_wait + bus_ride_to_station + walk_to_platform + mtr_wait + mtr_ride + walk_from_mtr
+5. Compares with current bus total time, recommends if saves ≥3 min
+
+**Example for 307 大埔中心→國際調解院**:
+- 🚌 72X 富蝶總站→旺角柏景灣 → 🚇 TWL 旺角→金鐘
+- 🚌 271 大埔→尖沙咀 → 🚇 TWL 尖沙咀→金鐘
+- 🚇 Pure MTR: 大埔墟站→會展站 (walk to station)
+
+|**Fixed**: `findConnectingLines` added EAL, TML, SIL, DRL. MTR radius 800→2000m.
+
+## 2026-06-19 — Fix: Citybus ETA lookup blocking main ETA render (slow load)
+
+**版本:** citybus-eta-nonblocking-v1
+
+**Problem**: 307P 路線第一次 load ETA 超慢（~19 API calls），Citybus API 嘅逐站 lookup blocking 咗主 KMB ETA 渲染。
+
+**Root cause**: `fetchAllETAs()` 入面每個 KMB 巴士 segment 都會 call `findCitybusStopIdByRouteAndName()` → 內部 fetch 城巴路線全部車站 + 逐一 match → 一條 307 路線 ~16 個站 => 約 19 個 API calls chain 先出到 ETA。
+
+**Fix**:
+1. `TrackingView.tsx` — 抽走 Citybus lookup 做獨立 `fetchCitybusETAs()` function
+2. `fetchAllETAs()` 只 fetch KMB ETA（主要 operator）→ **即時顯示**
+3. `fetchAllETAs()` 完成後 background fire `fetchCitybusETAs()`（非阻塞）
+4. Citybus cache（module-level Map）跨 re-render 保留
+5. Citybus ETA 用 `setSegmentETAs(prev => {...})` merge 入現有資料，唔會覆蓋 KMB ETA
+
+**Effect**:
+- First load: KMB ETA 1秒內顯示，Citybus 幾秒後 background 到
+- 30s refresh: Citybus cache warm → 只需多 1 個 API call
+- 用戶唔會見到空白 loading 等所有 ETA
+
+**Verification**: Build OK, deploy 成功, 0 JS errors, 307P 正常顯示班次。
+
+## 2026-06-19 — 全新 Icon 設計 (C Concept + Pin + Bullseye)
+
+**版本:** icon-redesign-v1a
+
+**設計過程：**
+1. 用 designer agent（kimi-k2.7-code @ opencode-go）生成多個概念
+2. 最終揀選「大 C」概念 — C 字母的兩個端點作為起點/終點
+3. 起點：藍色圓點（代表「你」），終點：紫色 bullseye target（代表「目的地」）
+4. 多次迭代優化：粗度、同心、端點大小
+
+**最終規格：**
+- C stroke: 50px，漸變 sky#38bdf8 → blue#60a5fa → purple#a78bfa
+- Pin 起點：r=40px，同心於 C 頂端 (379,170)
+- Bullseye 終點：outer r=40px，同心於 C 底端 (379,342)
+- 背景: #0f172a, rounded rect rx=112
+- 移除 emoji 🏃 同「趕車」文字
+
+**更新檔案：**
+- `public/icon-512x512.svg` — SVG 源檔
+- `public/icon-512x512.png` — 512x512 PNG
+- `public/icon-192x192.png` — 192x192 PNG (PWA manifest + notification)
+- `public/icon-design-v1a.svg` — 設計稿
+- `src/app/favicon.ico` — 瀏覽器 favicon
+- `src/components/AuthScreen.tsx` — login page logo (🏃 emoji → SVG 新 icon)
+
+**驗證：** 0 JS errors, login page 顯示新 logo, PWA icons 已更新
+
+## 2026-06-17 — Fix: Citybus stop name matching + Icon v1a + Header PNG
+
+**版本:** `icon-v1a-header-png`
+
+### Icon 修正
+- PWA icon 由 SVG 設計改為直接用 v1a design（空心 C + 藍點，冇三角形）
+- Header icon 由白色 SVG 改為 `<img src="/icon-192-v2.png">`，同 PWA icon 一致
+- Settings about 頁 icon 同步更新
+
+### Citybus 307P 停站 matching 修復
+- **問題**：KMB stop name 有 `(TP576)` suffix 而 Citybus 用 `廣福邨, 大埔公路` comma format，`findCitybusStopIdByRouteAndName()` 無法 match
+- **修復**：matching 時 strip KMB input name 嘅 parenthetical suffix (`(TPxxx)`) 再重試；Citybus name map 同時儲存 comma-stripped base name（`港運城, 英皇道` → 同時存 `港運城`）
+- 而家可以 match 到：廣福邨、大埔中心、太和廣場、港運城、炮台山站、清風街等
+
+**驗證：** 0 JS errors, UI 正常，icon 正確顯示 v1a design
