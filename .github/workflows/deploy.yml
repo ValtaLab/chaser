@@ -35,6 +35,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: pages deploy out --project-name=chaser --commit-dirty=true
+        env:
+          CLOUDFLARE_ACCOUNT_ID: 77002f1945c94a1c33a11717015c378b
 
       - name: Verify deployment
         run: |
