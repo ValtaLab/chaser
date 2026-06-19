@@ -1,5 +1,5 @@
 // Combined ETA service — merges bus + MTR + GMB + tram data
-import { getStopETA, type StopETA } from './bus-api';
+import { getStopETA, getKMBStopInfo, getCitybusStopInfo, type StopETA } from './bus-api';
 import { getMTRETA, type MTRETA, findStation, getMTRLineName } from './mtr-api';
 import { getGMBStopETASummary, type GMBStopETAInfo } from './gmb-api';
 import { getEstimatedTramTime } from './tram-api';
@@ -193,17 +193,37 @@ export async function calculateTotalJourney(
 
     if (isFirst) {
       // Walk from current location to first boarding stop
-      // Guard: if stop location is still (0,0) after enrichment, skip walk calc
       if (!isZeroLocation(seg.fromStop.location)) {
+        const stopLat = Number(seg.fromStop.location.lat).toFixed(5);
+        const stopLng = Number(seg.fromStop.location.lng).toFixed(5);
+        const userLat = Number(currentLocation.lat).toFixed(5);
+        const userLng = Number(currentLocation.lng).toFixed(5);
+        const dist = haversineMeters(currentLocation, seg.fromStop.location).toFixed(0);
+        console.log(`[Journey] Walk calc: user=(${userLat},${userLng}) stop=${seg.fromStop.nameZh} (${stopLat},${stopLng}) dist=${dist}m`);
         walkMinutes = await walkTimeBetween(currentLocation, seg.fromStop.location);
+        console.log(`[Journey] Walk result: ${walkMinutes}min`);
       } else {
-        walkMinutes = 2; // default: assume user is near the stop
-        minConfidence = 'low';
+        // Retry fetching stop coords directly (enrichment may have failed)
+        try {
+          const company = seg.route.operator === 'citybus' ? 'CTB' : 'KMB';
+          const stopInfo = await (company === 'CTB' ? getCitybusStopInfo(seg.fromStop.id) : getKMBStopInfo(seg.fromStop.id));
+          if (stopInfo && typeof stopInfo.lat === 'number' && typeof stopInfo.long === 'number') {
+            seg.fromStop.location = { lat: stopInfo.lat, lng: stopInfo.long };
+            walkMinutes = await walkTimeBetween(currentLocation, seg.fromStop.location);
+            console.log(`[Journey] Retry resolved stop coords: ${seg.fromStop.nameZh} (${stopInfo.lat}, ${stopInfo.long})`);
+          }
+        } catch (e) {
+          console.log(`[Journey] Stop coord retry failed for ${seg.fromStop.nameZh}:`, e);
+        }
+        if (walkMinutes === 0) {
+          walkMinutes = 5; // reasonable default for HK bus stop walking distance
+          minConfidence = 'low';
+        }
       }
       segments.push({
         type: 'walk',
         minutes: walkMinutes,
-        description: `步行至 ${seg.fromStop.nameZh}`,
+        description: `步行至 ${seg.fromStop.nameZh} (${Number(seg.fromStop.location.lat).toFixed(4)},${Number(seg.fromStop.location.lng).toFixed(4)})`,
         fromLocation: currentLocation,
         toLocation: seg.fromStop.location,
       });
@@ -212,7 +232,7 @@ export async function calculateTotalJourney(
       if (!isZeroLocation(prevSeg.toStop.location) && !isZeroLocation(seg.fromStop.location)) {
         walkMinutes = await walkTimeBetween(prevSeg.toStop.location, seg.fromStop.location);
       } else {
-        walkMinutes = 2; // default transfer walk
+        walkMinutes = 5; // default transfer walk
         minConfidence = 'low';
       }
       segments.push({
@@ -226,45 +246,7 @@ export async function calculateTotalJourney(
 
     totalMinutes += walkMinutes;
 
-    // 2. Wait for next vehicle at boarding stop
-    let waitMinutes = 3; // default wait
-    const arrivalAtStop = new Date(now.getTime() + totalMinutes * 60000);
-
-    try {
-      const etas = await fetchETA(
-        seg.fromStop.id,
-        seg.route.type as 'bus' | 'mtr' | 'gmb' | 'tram',
-        seg.route.operator === 'citybus' ? 'CTB' : 'KMB',
-        seg.route.name,
-        seg.route.type === 'mtr' ? seg.route.name : undefined,
-      );
-
-      if (etas.length > 0) {
-        const firstETA = etas[0];
-        const etaTime = new Date(now.getTime() + firstETA.minutesAway * 60000);
-        waitMinutes = Math.max(0, Math.ceil((etaTime.getTime() - arrivalAtStop.getTime()) / 60000));
-
-        // Confidence based on ETA freshness
-        if (firstETA.minutesAway > 30) minConfidence = 'low';
-        else if (firstETA.minutesAway > 15) minConfidence = 'medium';
-      }
-
-      if (waitMinutes > 15) {
-        canMakeIt = false;
-      }
-    } catch {
-      minConfidence = 'low';
-      waitMinutes = 5; // fallback
-    }
-
-    segments.push({
-      type: 'wait',
-      minutes: waitMinutes,
-      description: `等 ${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}`,
-    });
-    totalMinutes += waitMinutes;
-
-    // 3. Ride time — estimate based on transport type
+    // 2. Ride time — estimate based on transport type
     let rideMinutes: number;
     if (seg.route.type === 'mtr') {
       // MTR: count actual stops between from and to, avg 2.5 min per stop

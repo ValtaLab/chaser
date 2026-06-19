@@ -31,12 +31,12 @@ interface StopAPIResponse {
  * Fetch real GPS coordinates for a bus stop from the KMB or Citybus API.
  * @param stopId - The stop ID (e.g. "BFA340" for KMB, "001001" for Citybus)
  * @param company - 'KMB' or 'CTB'
- * @returns Coordinates {lat, lng} or null if not found
+ * @returns Coordinates {lat, lng} + name or null if not found
  */
 export async function getStopCoordinates(
   stopId: string,
   company: 'KMB' | 'CTB'
-): Promise<{ lat: number; lng: number } | null> {
+): Promise<{ lat: number; lng: number; nameZh?: string } | null> {
   try {
     const baseUrl = company === 'KMB' ? KMB_BASE : CTB_BASE;
     const url = `${baseUrl}/stop/${stopId}`;
@@ -54,6 +54,7 @@ export async function getStopCoordinates(
     return {
       lat: data.lat,
       lng: data.long, // API uses 'long', we normalize to 'lng'
+      nameZh: data.name_tc,
     };
   } catch (err) {
     console.error(`Failed to fetch coordinates for stop ${stopId} (${company}):`, err);
@@ -108,7 +109,6 @@ export async function enrichSegmentWithCoords(segment: CommuteSegment): Promise<
       if (coords) {
         enriched.fromStop = { ...enriched.fromStop, location: coords };
       } else {
-        // Fallback: try matching by Chinese name
         const station = segment.fromStop.nameZh || segment.fromStop.name;
         const found = MTR_STATIONS.find(s => s.name_tc === station || s.stationCode === station);
         if (found) {
@@ -132,26 +132,73 @@ export async function enrichSegmentWithCoords(segment: CommuteSegment): Promise<
   }
 
   // Handle bus/minibus segments with API fetch
+  // ALWAYS refetch coordinates — stored coords may be stale/wrong
   const company = getSegmentCompany(segment);
 
-  if (company && isZero(segment.fromStop.location)) {
+  if (company) {
+    // Always refetch fromStop coordinates + name
+    const origCoords = segment.fromStop.location;
+    console.log(`[Coords] fromStop "${segment.fromStop.nameZh}" id=${segment.fromStop.id} company=${company} orig=(${origCoords?.lat},${origCoords?.lng})`);
     let coords = await getStopCoordinates(segment.fromStop.id, company);
+    console.log(`[Coords] KMB result:`, coords);
+    
+    // If KMB returns a stop with wrong name, try Citybus API + name search
+    if (coords && coords.nameZh && segment.fromStop.nameZh &&
+        !coords.nameZh.includes(segment.fromStop.nameZh.replace(/[()（）]/g,'').slice(0,3)) &&
+        !segment.fromStop.nameZh.includes(coords.nameZh.replace(/[()（）]/g,'').slice(0,3))) {
+      console.log(`[Coords] Name mismatch! KMB="${coords.nameZh}" stored="${segment.fromStop.nameZh}"`);
+      // Try CTB API with same ID (might be joint-operated)
+      const ctbCoords = await getStopCoordinates(segment.fromStop.id, 'CTB');
+      console.log(`[Coords] CTB direct:`, ctbCoords);
+      if (ctbCoords) {
+        coords = ctbCoords;
+      } else {
+        // CTB failed too — search by name in Citybus route stops
+        console.log(`[Coords] Searching Citybus route ${segment.route.name} for "${segment.fromStop.nameZh}"...`);
+        coords = await findBusStopCoordsByName(
+          {...segment, route: {...segment.route, operator: 'citybus'}} as any, 'CTB', 'from'
+        );
+        console.log(`[Coords] Name search result:`, coords);
+      }
+    }
+    
     if (!coords) {
-      // Fallback: try KMB route-stop list to find by Chinese name
       coords = await findBusStopCoordsByName(segment, company, 'from');
     }
     if (coords) {
-      enriched.fromStop = { ...enriched.fromStop, location: coords };
+      enriched.fromStop = { ...enriched.fromStop, location: { lat: coords.lat, lng: coords.lng } };
+      if (coords.nameZh) {
+        enriched.fromStop = { ...enriched.fromStop, nameZh: coords.nameZh, name: coords.nameZh };
+      }
+      console.log(`[Coords] FINAL fromStop: (${coords.lat},${coords.lng}) name="${coords.nameZh}"`);
+    } else {
+      console.log(`[Coords] FAILED to resolve fromStop coordinates`);
     }
-  }
 
-  if (company && isZero(segment.toStop.location)) {
-    let coords = await getStopCoordinates(segment.toStop.id, company);
+    // Always refetch toStop coordinates + name
+    coords = await getStopCoordinates(segment.toStop.id, company);
+    
+    if (coords && coords.nameZh && segment.toStop.nameZh &&
+        !coords.nameZh.includes(segment.toStop.nameZh.replace(/[()（）]/g,'').slice(0,3)) &&
+        !segment.toStop.nameZh.includes(coords.nameZh.replace(/[()（）]/g,'').slice(0,3))) {
+      const ctbCoords = await getStopCoordinates(segment.toStop.id, 'CTB');
+      if (ctbCoords) {
+        coords = ctbCoords;
+      } else {
+        coords = await findBusStopCoordsByName(
+          {...segment, route: {...segment.route, operator: 'citybus'}} as any, 'CTB', 'to'
+        );
+      }
+    }
+    
     if (!coords) {
       coords = await findBusStopCoordsByName(segment, company, 'to');
     }
     if (coords) {
-      enriched.toStop = { ...enriched.toStop, location: coords };
+      enriched.toStop = { ...enriched.toStop, location: { lat: coords.lat, lng: coords.lng } };
+      if (coords.nameZh) {
+        enriched.toStop = { ...enriched.toStop, nameZh: coords.nameZh, name: coords.nameZh };
+      }
     }
   }
 
@@ -163,31 +210,42 @@ async function findBusStopCoordsByName(
   segment: CommuteSegment,
   company: 'KMB' | 'CTB',
   which: 'from' | 'to'
-): Promise<{ lat: number; lng: number } | null> {
+): Promise<{ lat: number; lng: number; nameZh?: string } | null> {
   try {
     const stopName = which === 'from'
       ? (segment.fromStop.nameZh || segment.fromStop.name)
       : (segment.toStop.nameZh || segment.toStop.name);
     const routeName = segment.route.name;
-    const bound = segment.route.id; // could have bound info
-    const baseUrl = company === 'KMB'
-      ? 'https://data.etabus.gov.hk/v1/transport/kmb'
-      : 'https://rt.data.gov.hk/v2/transport/citybus';
     
     // Try both directions
     for (const dir of ['outbound', 'inbound']) {
-      const res = await fetch(`${baseUrl}/route-stop/${routeName}/${dir}/1`);
+      let url: string;
+      if (company === 'CTB') {
+        url = `https://rt.data.gov.hk/v2/transport/citybus/route-stop/CTB/${routeName.toUpperCase()}/${dir}`;
+      } else {
+        url = `https://data.etabus.gov.hk/v1/transport/kmb/route-stop/${routeName}/${dir}/1`;
+      }
+      const res = await fetch(url);
       if (!res.ok) continue;
       const data = await res.json();
       const stops: { stop: string; seq: number }[] = (data.data || []);
       for (const s of stops) {
-        const infoRes = await fetch(`${baseUrl}/stop/${s.stop}`);
+        let infoUrl: string;
+        if (company === 'CTB') {
+          infoUrl = `https://rt.data.gov.hk/v2/transport/citybus/stop/${s.stop}`;
+        } else {
+          infoUrl = `https://data.etabus.gov.hk/v1/transport/kmb/stop/${s.stop}`;
+        }
+        const infoRes = await fetch(infoUrl);
         if (!infoRes.ok) continue;
         const info = await infoRes.json();
         const infoData = info.data;
         if (infoData && (infoData.name_tc === stopName || infoData.name_en === stopName ||
-            infoData.name_tc?.startsWith(stopName) || infoData.name_en?.startsWith(stopName))) {
-          return { lat: infoData.lat, lng: infoData.long || infoData.lng };
+            infoData.name_tc?.startsWith(stopName) || infoData.name_en?.startsWith(stopName) ||
+            infoData.name_tc?.includes(stopName) || infoData.name_en?.includes(stopName) ||
+            stopName.includes(infoData.name_tc?.replace(/[,，].*/,'')?.trim() || '') ||
+            infoData.name_tc?.split(/[,，]/).some((part: string) => stopName.includes(part.trim())))) {
+          return { lat: infoData.lat, lng: infoData.long || infoData.lng, nameZh: infoData.name_tc };
         }
       }
     }

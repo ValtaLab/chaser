@@ -5,6 +5,22 @@ set -e
 cd /home/blackpi/chaser
 
 # ========================
+# Auto-bump version number in MainApp.tsx
+# ========================
+VERSION_FILE="src/components/MainApp.tsx"
+CURRENT_VER=$(grep -o 'v[0-9]\{8\}\.[0-9]\+' "$VERSION_FILE" | head -1)
+if [ -n "$CURRENT_VER" ]; then
+  DATE_PART=$(echo "$CURRENT_VER" | cut -d. -f1)
+  PATCH_PART=$(echo "$CURRENT_VER" | cut -d. -f2)
+  NEW_PATCH=$((PATCH_PART + 1))
+  NEW_VER="${DATE_PART}.${NEW_PATCH}"
+  sed -i "s/$CURRENT_VER/$NEW_VER/g" "$VERSION_FILE"
+  echo "✅ Version bumped: $CURRENT_VER → $NEW_VER"
+else
+  echo "⚠️  WARNING: Could not find version string in $VERSION_FILE — skipping auto-bump"
+fi
+
+# ========================
 # Gate: browser verification required from previous deploy
 # ========================
 VERIFY_FILE=".browser_verify_pending"

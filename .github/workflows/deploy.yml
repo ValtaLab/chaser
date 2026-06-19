@@ -1,0 +1,49 @@
+name: Deploy Chaser
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Inject build version
+        run: |
+          SHORT_HASH=$(echo "${{ github.sha }}" | cut -c1-7)
+          DATE_TAG=$(date +%Y%m%d)
+          sed -i "s/v[0-9]\{8\}\.[0-9]\+/v${DATE_TAG}.${SHORT_HASH}/g" src/components/MainApp.tsx
+          echo "Version injected: v${DATE_TAG}.${SHORT_HASH}"
+
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          command: pages deploy out --project-name=chaser --commit-dirty=true
+
+      - name: Verify deployment
+        run: |
+          sleep 5
+          URL="https://master.chaser-6ta.pages.dev"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL?nocache=$(date +%s)")
+          echo "HTTP Status: $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Verification failed"
+            exit 1
+          fi
+          echo "✅ Deploy verified"

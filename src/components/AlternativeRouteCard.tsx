@@ -44,7 +44,7 @@ function LastBusPassedWarning() {
 }
 
 // ─── Single Alternative Row ──────────────────────────────────────────
-function AlternativeRow({ alt, onSelect }: { alt: AlternativeRoute; onSelect?: (alt: AlternativeRoute) => void }) {
+function AlternativeRow({ alt, onSelect, segmentLabel }: { alt: AlternativeRoute; onSelect?: (alt: AlternativeRoute) => void; segmentLabel: string }) {
   const style = confidenceDot(alt.confidence);
 
   return (
@@ -52,33 +52,40 @@ function AlternativeRow({ alt, onSelect }: { alt: AlternativeRoute; onSelect?: (
       onClick={() => onSelect?.(alt)}
       className="w-full text-left bg-slate-800/60 hover:bg-slate-700/60 rounded-xl p-3 transition-colors"
     >
-      <div className="flex items-center gap-2.5">
-        {/* Confidence dot */}
-        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${style.dot}`} />
-
-        {/* Route badge */}
-        <span className="text-lg font-bold text-white flex-shrink-0">
+      {/* Route name + company + time saved */}
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-base font-bold text-white">
           {routeTypeEmoji(alt.routeType)} {alt.routeName}
         </span>
-
-        {/* Time saved badge */}
-        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${style.badge}`}>
-          快 {alt.savedMinutes} 分鐘
+        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+          alt.company === 'CTB' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-red-500/20 text-red-400'
+        }`}>
+          {alt.company === 'CTB' ? 'C' : alt.company === 'MTR' ? 'M' : 'K'}
         </span>
-
-        {/* Spacer */}
+        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${style.badge}`}>
+          快 {alt.savedMinutes} 分
+        </span>
         <span className="flex-1" />
-
-        {/* Next arrival */}
-        <span className={`text-sm font-medium flex-shrink-0 ${style.text}`}>
-          {alt.minutesAway <= 0 ? '到站中' : `${alt.minutesAway} 分鐘後到站`}
+        <span className={`text-sm font-semibold ${style.text}`}>
+          {alt.minutesAway <= 0 ? '🚏 到站中' : `${alt.minutesAway} 分鐘後到`}
         </span>
       </div>
 
-      {/* Destination / direction */}
-      <p className="text-sm text-gray-400 mt-1.5 pl-4.5 truncate">
-        {alt.direction}
-      </p>
+      {/* Boarding + alighting info */}
+      <div className="flex items-center gap-2 text-xs text-gray-400">
+        <span className="bg-slate-700/50 px-1.5 py-0.5 rounded text-gray-300 truncate max-w-[140px]">
+          🚏 {segmentLabel}
+        </span>
+        <span className="text-gray-600">↓</span>
+        <span className="truncate">
+          {alt.direction}
+        </span>
+        {alt.estimatedRideMinutes > 0 && (
+          <span className="text-gray-500 flex-shrink-0 ml-auto">
+            🕐 ~{alt.totalMinutes} 分鐘
+          </span>
+        )}
+      </div>
     </button>
   );
 }
@@ -110,7 +117,7 @@ export default function AlternativeRouteCard({ segment, onSelect }: AlternativeR
         {/* ── Header (always visible) ────────────────────────────── */}
         <button
           onClick={() => setExpanded(prev => !prev)}
-          className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-slate-700/40 transition-colors"
+          className="w-full text-left px-4 py-3 flex items-center gap-2 hover:bg-slate-700/40 transition-colors"
         >
           {/* Section label */}
           <span className="text-sm font-semibold text-gray-300 flex-shrink-0">
@@ -120,27 +127,20 @@ export default function AlternativeRouteCard({ segment, onSelect }: AlternativeR
           {/* Best alternative summary (only if alternatives exist) */}
           {best && (
             <>
-              <span className="flex items-center gap-1.5 min-w-0">
+              <span className="flex items-center gap-1 min-w-0">
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 ${bestStyle.dot}`} />
-                <span className="text-white font-bold">{best.routeName}</span>
+                <span className="text-white font-bold truncate">{best.routeName}</span>
               </span>
 
               {/* Time saved badge for best */}
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${bestStyle.badge}`}>
-                {segment.isLastBusPassed ? `${best.minutesAway} 分鐘` : `快 ${best.savedMinutes} 分鐘`}
+                {segment.isLastBusPassed ? `${best.minutesAway} 分鐘` : `快 ${best.savedMinutes} 分`}
               </span>
             </>
           )}
 
           {/* Spacer */}
           <span className="flex-1" />
-
-          {/* Currently configured route context */}
-          {!segment.isLastBusPassed && (
-            <span className="text-xs text-gray-500 flex-shrink-0">
-              原路線: {segment.configuredRoute}
-            </span>
-          )}
 
           {/* Expand/collapse chevron */}
           <svg
@@ -166,14 +166,17 @@ export default function AlternativeRouteCard({ segment, onSelect }: AlternativeR
             )}
 
             {segment.alternatives.slice(0, 3).map((alt) => (
-              <AlternativeRow key={`${alt.routeName}-${alt.company}`} alt={alt} onSelect={onSelect} />
+              <AlternativeRow key={`${alt.routeName}-${alt.company}`} alt={alt} segmentLabel={segment.segmentLabel} onSelect={onSelect} />
             ))}
 
             {/* Context line */}
             {!segment.isLastBusPassed && (
-              <p className="text-xs text-gray-500 text-center pt-1">
-                你目前嘅路線 {segment.configuredRoute} 需等約 {segment.configuredWaitMinutes} 分鐘
-              </p>
+              <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
+                <span>原路線: {segment.configuredRoute}</span>
+                {segment.configuredWaitMinutes > 0 && (
+                  <span>等候約 {segment.configuredWaitMinutes} 分鐘</span>
+                )}
+              </div>
             )}
           </div>
         </div>

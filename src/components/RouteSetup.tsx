@@ -64,7 +64,7 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
         toStopId: seg.toStop.id,
       }));
       setSegments(editSegments);
-      setStep('segments');
+      // Keep at 'name' step so user can edit route name first
 
       // Trigger validation immediately using the local array (no race condition)
       editSegments.forEach((seg, index) => {

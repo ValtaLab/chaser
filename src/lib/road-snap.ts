@@ -78,14 +78,25 @@ export async function walkTimeBetween(from: Location, to: Location): Promise<num
     const coords = `${from.lng},${from.lat};${to.lng},${to.lat}`;
     const url = `${OSRM_WALK_BASE}/${coords}?overview=false`;
     const res = await fetch(url);
-    if (!res.ok) return fallbackWalkTime(from, to);
+    if (!res.ok) {
+      console.log(`[WalkTime] OSRM ${res.status}, fallback`);
+      return fallbackWalkTime(from, to);
+    }
     const data = await res.json();
-    if (!data.routes || data.routes.length === 0) return fallbackWalkTime(from, to);
-    // OSRM returns duration in seconds, convert to minutes
-    const durationMin = data.routes[0].duration / 60;
-    // Add 1 minute buffer for stairs, traffic lights, etc.
-    return Math.max(1, Math.ceil(durationMin) + 1);
-  } catch {
+    if (!data.routes || data.routes.length === 0) {
+      console.log(`[WalkTime] OSRM no route, fallback`);
+      return fallbackWalkTime(from, to);
+    }
+    // NOTE: OSRM demo server's walking profile returns car-like speeds.
+    // We use OSRM's road DISTANCE (accurate) but calculate time
+    // at 80m/min (5 km/h average walking speed).
+    const roadMeters = data.routes[0].distance;
+    const walkingMinutes = roadMeters / 80;
+    const result = Math.max(1, Math.ceil(walkingMinutes) + 1);
+    console.log(`[WalkTime] OSRM road=${roadMeters}m → ${result}min (OSRM raw duration would be ${(data.routes[0].duration/60).toFixed(1)}min — unreliable)`);
+    return result;
+  } catch (err) {
+    console.log(`[WalkTime] OSRM err: ${err}, fallback`);
     return fallbackWalkTime(from, to);
   }
 }

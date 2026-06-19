@@ -177,76 +177,128 @@ export async function getStopETA(
 
 // ============ Citybus Stop ID Lookup (for joint-operated routes) ============
 
-// Module-level cache: key=`${route}_${direction}`, value=Map<stopNameZh, stopId>
-const citybusStopNameCache = new Map<string, Map<string, string>>();
+// Module-level cache: key=`${route}_${direction}`, value={nameMap, coordsMap}
+// nameMap: stopNameZh → stopId, coordsMap: stopId → {lat, lng}
+const citybusStopCache = new Map<string, { nameMap: Map<string, string>; coordsMap: Map<string, { lat: number; lng: number }> }>();
 
 /**
  * Find a Citybus stop ID for a given route, direction, and Chinese stop name.
  * Used for joint-operated routes (聯營線) like 307P where both KMB and Citybus serve the same route.
  * Results are cached to avoid repeated API calls.
+ * Falls back to nearest stop by coordinates across BOTH directions if name matching fails.
  */
 export async function findCitybusStopIdByRouteAndName(
   route: string,
   stopNameZh: string,
-  direction: 'I' | 'O'
+  direction: 'I' | 'O',
+  stopLatLng?: { lat: number; lng: number }
 ): Promise<string | null> {
   const cacheKey = `${route.toUpperCase()}_${direction}`;
 
   // Build cache if not exists
-  if (!citybusStopNameCache.has(cacheKey)) {
+  if (!citybusStopCache.has(cacheKey)) {
     const stops = await getCitybusRouteStops(route, direction);
     const nameMap = new Map<string, string>();
+    const coordsMap = new Map<string, { lat: number; lng: number }>();
 
-    for (const s of stops) {
-      try {
-        const info = await getCitybusStopInfo(s.stop);
-        if (info?.name_tc) {
-          nameMap.set(info.name_tc, s.stop);
-          // Also store without parenthetical suffix like "(TP930)"
-          const baseName = info.name_tc.replace(/\s*\(.*?\)\s*$/, '').trim();
-          if (baseName !== info.name_tc) {
-            nameMap.set(baseName, s.stop);
-          }
-          // Also store without comma suffix like "港運城, 英皇道" → "港運城"
-          const commaName = info.name_tc.replace(/\s*,\s*.*$/, '').trim();
-          if (commaName !== info.name_tc && commaName !== baseName && !nameMap.has(commaName)) {
-            nameMap.set(commaName, s.stop);
-          }
+    // Parallel fetch all stop info
+    const stopInfos = await Promise.all(
+      stops.map(async (s) => {
+        try {
+          const info = await getCitybusStopInfo(s.stop);
+          return { seq: s.seq, stop: s.stop, info };
+        } catch {
+          return { seq: s.seq, stop: s.stop, info: null };
         }
-      } catch {
-        // skip stops that fail to load
+      })
+    );
+
+    for (const { info } of stopInfos) {
+      if (info?.name_tc) {
+        nameMap.set(info.name_tc, info.stop);
+        if (info.lat && info.long) {
+          coordsMap.set(info.stop, { lat: info.lat, lng: info.long });
+        }
+        const baseName = info.name_tc.replace(/\s*\(.*?\)\s*$/, '').trim();
+        if (baseName !== info.name_tc) {
+          nameMap.set(baseName, info.stop);
+        }
+        const commaName = info.name_tc.replace(/\s*,\s*.*$/, '').trim();
+        if (commaName !== info.name_tc && commaName !== baseName && !nameMap.has(commaName)) {
+          nameMap.set(commaName, info.stop);
+        }
       }
     }
-    citybusStopNameCache.set(cacheKey, nameMap);
+    citybusStopCache.set(cacheKey, { nameMap, coordsMap });
   }
 
-  const nameMap = citybusStopNameCache.get(cacheKey)!;
+  const { nameMap, coordsMap } = citybusStopCache.get(cacheKey)!;
 
-  // Helper: strip trailing parenthetical suffixes like "(TP340)", "(LT410)"
   const stripSuffix = (s: string) => s.replace(/\s*\(.*?\)\s*$/, '').trim();
 
   // Exact match first
   if (nameMap.has(stopNameZh)) return nameMap.get(stopNameZh)!;
 
-  // Try base name (KMB often appends (TPxxx) suffixes to Tai Po stops)
   const baseStopName = stripSuffix(stopNameZh);
   if (baseStopName !== stopNameZh && nameMap.has(baseStopName)) {
     return nameMap.get(baseStopName)!;
   }
 
-  // Then try startsWith/contains matching
-  // KMB sometimes returns names without suffixes while Citybus has them
+  // startsWith/contains matching
   for (const [name, id] of nameMap) {
     if (name.startsWith(stopNameZh) || stopNameZh.startsWith(name)) return id;
     if (name.includes(stopNameZh) || stopNameZh.includes(name)) return id;
   }
 
-  // Retry with base name if original had a suffix (catches "(TPxxx)" → ", Area" cases)
   if (baseStopName !== stopNameZh) {
     for (const [name, id] of nameMap) {
       if (name.startsWith(baseStopName) || baseStopName.startsWith(name)) return id;
       if (name.includes(baseStopName) || baseStopName.includes(name)) return id;
     }
+  }
+
+  return null;
+}
+
+/**
+ * Cross-direction Citybus stop lookup — tries both directions,
+ * falls back to nearest stop by coordinates if name matching fails.
+ */
+export async function findCitybusStopAnyDirection(
+  route: string,
+  stopNameZh: string,
+  stopLatLng?: { lat: number; lng: number }
+): Promise<string | null> {
+  // Try O first, then I
+  for (const dir of ['O', 'I'] as const) {
+    const result = await findCitybusStopIdByRouteAndName(route, stopNameZh, dir);
+    if (result) return result;
+  }
+
+  // Name matching failed — find nearest stop across BOTH directions by coords
+  if (!stopLatLng) return null;
+
+  let nearestId: string | null = null;
+  let nearestDist = Infinity;
+
+  for (const dir of ['O', 'I'] as const) {
+    const cacheKey = `${route.toUpperCase()}_${dir}`;
+    if (!citybusStopCache.has(cacheKey)) continue; // skip if cache not built
+    const { coordsMap } = citybusStopCache.get(cacheKey)!;
+    for (const [stopId, coord] of coordsMap) {
+      const d = Math.sqrt(
+        Math.pow(coord.lat - stopLatLng.lat, 2) +
+        Math.pow(coord.lng - stopLatLng.lng, 2)
+      );
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearestId = stopId;
+      }
+    }
+  }
+
+  if (nearestId && nearestDist < 0.02) {
+    return nearestId;
   }
 
   return null;

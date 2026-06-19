@@ -11,7 +11,7 @@ import {
 import {
   getKMBRouteStops, getKMBStopInfo,
   getCitybusRouteStops, getCitybusStopInfo,
-  findCitybusStopIdByRouteAndName,
+  findCitybusStopAnyDirection,
   getCitybusRouteInfo,
 } from '@/lib/bus-api';
 import { getMTRLineCoords, getLineStations, findStation, getMTRLineName } from '@/lib/mtr-api';
@@ -39,7 +39,7 @@ import { snapToRoads, haversineMeters } from '@/lib/road-snap';
 import { enrichSegmentWithCoords } from '@/lib/stop-coords';
 import SmartJourneyTimeline from './SmartJourneyTimeline';
 import AlternativeRouteCard from './AlternativeRouteCard';
-import type { CommuteRoute, CommuteSegment, Location, SmartRouteRecommendation } from '@/types';
+import type { CommuteRoute, CommuteSegment, Location, SmartSegment, SmartRouteRecommendation } from '@/types';
 
 // ─── Helper: find correct direction and get all stop coordinates ─────
 async function findDirectionWithStops(
@@ -207,9 +207,9 @@ export default function TrackingView({
   const [routePolylines, setRoutePolylines] = useState<Location[][]>([]);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const [journeyEstimate, setJourneyEstimate] = useState<SmartRouteRecommendation | null>(null);
   const [alternatives, setAlternatives] = useState<SegmentAlternatives[]>([]);
   const [showTimelineDetail, setShowTimelineDetail] = useState(false);
+  const [gpsStatus, setGpsStatus] = useState<'waiting' | 'active' | 'error' | 'none'>('none');
   const enrichedRouteRef = useRef<{ origin: Location; destination: Location } | null>(null);
   const enrichedSegmentsRef = useRef<CommuteSegment[] | null>(null);
   // Cache: Set of route names that Citybus also serves (joint-operated routes like 307P)
@@ -269,36 +269,148 @@ export default function TrackingView({
     }
   }, []);
 
+  // ── Sync liveLocation from currentLocation prop ─────────────────
+  // useState(currentLocation) only uses the INITIAL value — this keeps it in sync
+  useEffect(() => {
+    if (currentLocation) {
+      setLiveLocation(currentLocation);
+      setGpsStatus('active');
+    }
+  }, [currentLocation]);
+
   // ── Live location tracking (runs inside tracking view) ───────────
   useEffect(() => {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      setGpsStatus('none');
+      addDebug('📍 GPS: 瀏覽器唔支援 geolocation API');
+      return;
+    }
 
-    const watchId = navigator.geolocation.watchPosition(
+    // Check permission state if available
+    if (navigator.permissions?.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((status) => {
+        addDebug(`📍 位置權限狀態: ${status.state}`);
+        if (status.state === 'denied') {
+          setGpsStatus('error');
+          addDebug('⚠️ 位置權限已拒絕！請去 iOS 設定 → Safari → 位置 → 改為「使用期間」');
+        }
+        status.onchange = () => addDebug(`📍 權限變更: ${status.state}`);
+      }).catch((e) => addDebug(`📍 permission.query error: ${e}`));
+    } else {
+      addDebug('📍 navigator.permissions 唔可用');
+    }
+
+    addDebug('📍 請求 GPS 位置權限...');
+    setGpsStatus('waiting');
+
+    // iOS PWA: watchPosition often fails silently without getCurrentPosition first
+    // Call getCurrentPosition to trigger the permission dialog, THEN watchPosition
+    navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLiveLocation({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        });
+        addDebug(`📍 GPS 權限已授予 (${pos.coords.accuracy.toFixed(0)}m 精度)`);
+        setLiveLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGpsStatus('active');
       },
-      (err) => console.error('Geolocation error:', err),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+      (err) => {
+        addDebug(`📍 ${err.code === 1 ? '❌ 權限被拒絕 (code 1)' : `GPS error ${err.code}`}: ${err.message}`);
+        if (err.code === 1) { // PERMISSION_DENIED
+          setGpsStatus('error');
+          addDebug('👉 解決: iOS 設定 → Safari → 位置 → 揀「使用期間」');
+          return;
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
     );
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    // Continuous tracking after permission (or in case getCurrentPosition times out)
+    let watchId: number;
+    try {
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setLiveLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setGpsStatus('active');
+        },
+        (err) => {
+          console.error('GPS watch error:', err);
+          addDebug(`📍 GPS watch error: ${err.code} ${err.message}`);
+          setGpsStatus('error');
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+      );
+    } catch (e) {
+      addDebug(`📍 GPS watch setup failed: ${e}`);
+      setGpsStatus('error');
+    }
+
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
   }, []);
 
   // ── Calculate total journey estimate (debounced) ──────────────────
-  useEffect(() => {
-    if (!liveLocation) return;
+  // Basic estimate from route data — set synchronously so timeline always shows
+  const basicEstimate = useMemo<SmartRouteRecommendation | null>(() => {
+    if (!route?.segments?.length) return null;
+    const now = new Date();
+    const dumbSegments: SmartSegment[] = [];
+    let totalMin = 0;
+    for (let i = 0; i < route.segments.length; i++) {
+      const seg = route.segments[i];
+      if (i === 0) {
+        dumbSegments.push({
+          type: 'walk', minutes: 5,
+          description: `步行至 ${seg.fromStop.nameZh || seg.fromStop.name}`,
+          fromLocation: undefined, toLocation: seg.fromStop.location,
+        });
+        totalMin += 5;
+      } else if (i > 0) {
+        dumbSegments.push({
+          type: 'walk', minutes: 3,
+          description: `步行至 ${seg.fromStop.nameZh || seg.fromStop.name}`,
+          fromLocation: route.segments[i-1].toStop.location,
+          toLocation: seg.fromStop.location,
+        });
+        totalMin += 3;
+      }
+      dumbSegments.push({
+        type: 'ride', minutes: 20,
+        description: `乘搭 ${seg.route.name}`,
+      });
+      totalMin += 20;
+    }
+    return {
+      routeId: route.id, routeName: route.name,
+      direction: route.direction,
+      totalMinutes: totalMin, segments: dumbSegments,
+      departureTime: now, arrivalTime: new Date(now.getTime() + totalMin * 60000),
+      canMakeIt: true, confidence: 'low' as const,
+    };
+  }, [route.id, route.name, route.direction, route.segments]);
 
-    const timer = setTimeout(() => {
-      calculateTotalJourney(route, liveLocation)
-        .then(result => setJourneyEstimate(result))
-        .catch(err => console.error('Journey estimate error:', err));
-    }, 500);
+  // Initialize journeyEstimate with basic estimate
+  const [journeyEstimate, setJourneyEstimate] = useState<SmartRouteRecommendation | null>(basicEstimate);
+
+  // Then: refine with GPS and real walk/ride calculations
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      const defaultLoc = { lat: 22.3193, lng: 114.1694 };
+      const loc = liveLocation
+        || enrichedSegmentsRef.current?.[0]?.fromStop.location
+        || defaultLoc;
+      try {
+        addDebug(`📍 ${liveLocation ? 'GPS' : (enrichedSegmentsRef.current?.[0]?.fromStop.location ? '車站' : '預設')}: (${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)})`);
+        const result = await calculateTotalJourney(route, loc);
+        setJourneyEstimate(result);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error('Journey estimate error:', err);
+        addDebug(`⚠️ 詳細估算失敗: ${msg}`);
+        // Keep the basic estimate, just log the error
+      }
+    }, 1500);
 
     return () => clearTimeout(timer);
-  }, [route, liveLocation]);
+  }, [route, liveLocation, enrichmentDone]);
 
   // ── Fetch full route stop sequences for all segments ─────────────
   useEffect(() => {
@@ -448,35 +560,77 @@ export default function TrackingView({
 
   // ── Fetch Citybus ETAs (non-blocking, runs after primary ETA display) ──
   const fetchCitybusETAs = useCallback(async () => {
+    console.log('[CTB] fetchCitybusETAs called, segments:', route.segments.length);
     for (const seg of route.segments) {
       if (seg.route.type !== 'bus') continue;
       if (seg.route.operator === 'citybus') continue;
 
       try {
+        console.log('[CTB] processing segment:', seg.route.name, seg.fromStop.nameZh);
         if (!citybusRouteCacheRef.current.has(seg.route.name)) {
           const ctbRoutes = await getCitybusRouteInfo(seg.route.name);
+          console.log('[CTB] route check:', seg.route.name, 'found:', ctbRoutes.length);
           if (ctbRoutes.length === 0) continue;
           citybusRouteCacheRef.current.add(seg.route.name);
         }
 
-        let citybusStopId = await findCitybusStopIdByRouteAndName(
+        // 1. Get KMB stop coordinates for coordinate-based matching
+        let kmbCoords: { lat: number; lng: number } | undefined;
+        if (seg.fromStop.location?.lat && seg.fromStop.location?.lng) {
+          kmbCoords = seg.fromStop.location;
+        } else {
+          // Fetch KMB stop info to get coordinates
+          try {
+            const info = await getKMBStopInfo(seg.fromStop.id);
+            if (info?.lat && info?.long) {
+              kmbCoords = { lat: info.lat, lng: info.long };
+            }
+          } catch (_e) {}
+        }
+
+        // 2. Try name-based matching first, then coordinate-based
+        let ctbStopId = await findCitybusStopAnyDirection(
           seg.route.name,
           seg.fromStop.nameZh || seg.fromStop.name,
-          'O'
+          kmbCoords
         );
-        if (!citybusStopId) {
-          citybusStopId = await findCitybusStopIdByRouteAndName(
-            seg.route.name,
-            seg.fromStop.nameZh || seg.fromStop.name,
-            'I'
-          );
-        }
-        if (!citybusStopId) continue;
 
-        const citybusETAs = await fetchETA(citybusStopId, 'bus', 'CTB', seg.route.name);
+        // 3. If still no match, brute-force: fetch all Citybus stops with info, find nearest by coords
+        if (!ctbStopId && kmbCoords) {
+          console.log('[CTB] trying brute-force stop matching');
+          for (const dir of ['O', 'I'] as const) {
+            const stops = await getCitybusRouteStops(seg.route.name, dir);
+            let nearest: { id: string; dist: number } | null = null;
+            for (const s of stops) {
+              try {
+                const info = await getCitybusStopInfo(s.stop);
+                if (info?.lat && info?.long) {
+                  const d = Math.sqrt(
+                    Math.pow(info.lat - kmbCoords.lat, 2) +
+                    Math.pow(info.long - kmbCoords.lng, 2)
+                  );
+                  if (!nearest || d < nearest.dist) nearest = { id: s.stop, dist: d };
+                }
+              } catch (_e) {}
+            }
+            if (nearest && nearest.dist < 0.02) { // ~2km threshold
+              ctbStopId = nearest.id;
+              break;
+            }
+          }
+        }
+
+        if (!ctbStopId) {
+          console.log('[CTB] no matching Citybus stop found, skipping');
+          continue;
+        }
+        console.log('[CTB] matched stop ID:', ctbStopId);
+
+        const citybusETAs = await fetchETA(ctbStopId, 'bus', 'CTB', seg.route.name);
+        console.log('[CTB] ETA fetch result:', citybusETAs.length, 'ETAs');
         if (citybusETAs.length === 0) continue;
 
-        addDebug(`🚌 CTB ${seg.route.name}: +${citybusETAs.length} extra ETAs`);
+        addDebug(`🚌 CTB ${seg.route.name}: +${citybusETAs.length} extra ETAs (stop ${ctbStopId})`);
 
         setSegmentETAs(prev => prev.map(s => {
           if (s.segmentId !== seg.id) return s;
@@ -488,8 +642,9 @@ export default function TrackingView({
           merged.sort((a, b) => a.minutesAway - b.minutesAway);
           return { ...s, etas: merged };
         }));
-      } catch {
-        addDebug(`⚠️ Citybus lookup failed for ${seg.route.name}`);
+      } catch (err) {
+        addDebug(`⚠️ Citybus lookup failed for ${seg.route.name}: ${err instanceof Error ? err.message : String(err)}`);
+        console.error('Citybus ETA error:', err);
       }
     }
   }, [route.segments]);
@@ -843,7 +998,7 @@ export default function TrackingView({
       {showETAPanel && (
         <div
           className="absolute top-4 right-3 bg-slate-800/80 border border-slate-700/60 rounded-2xl shadow-2xl overflow-hidden pointer-events-auto"
-          style={{ zIndex: 1000, maxWidth: 280, minWidth: 200 }}
+          style={{ zIndex: 1000, maxWidth: 340, minWidth: 240 }}
         >
         {/* ETA header */}
         <div className="flex items-center justify-between px-2.5 pt-2 pb-1">
@@ -884,8 +1039,9 @@ export default function TrackingView({
             
             const validEtas = filteredEtas.filter(e => e.minutesAway >= 0);
             const minEta = validEtas.length > 0 ? validEtas[0].minutesAway : null;
-            const topTwo = filteredEtas.filter(e => e.minutesAway >= 0).slice(0, 2);
-            const remarkEta = topTwo.length === 0 ? filteredEtas.find(e => e.remark) : null;
+            // Show the 2 soonest arrivals (pure time-based)
+            const topEtas = validEtas.slice(0, 2);
+            const remarkEta = topEtas.length === 0 ? filteredEtas.find(e => e.remark) : null;
             const borderColor =
               minEta !== null && minEta <= 2
                 ? 'border-red-500/50'
@@ -899,12 +1055,12 @@ export default function TrackingView({
                   <span className="text-[9px] font-medium text-gray-200 truncate">
                     {isMTR ? '🚇' : '🚌'} {seg.label}
                   </span>
-                  {topTwo.length > 0 ? (
+                  {topEtas.length > 0 ? (
                     <div className="flex items-center gap-1.5">
-                      {topTwo.map((eta, i) => (
+                      {topEtas.map((eta, i) => (
                         <span key={i} className="flex items-center gap-0.5">
                           <span className={`text-[7px] font-bold ${
-                            eta.company === 'CTB' ? 'text-green-400' : 'text-blue-400'
+                            eta.company === 'CTB' ? 'text-yellow-400' : 'text-red-400'
                           }`}>
                             {eta.company === 'CTB' ? 'C' : 'K'}
                           </span>
@@ -1028,6 +1184,20 @@ export default function TrackingView({
                 expanded={showTimelineDetail}
                 onToggle={() => setShowTimelineDetail(prev => !prev)}
               />
+            )}
+            {/* GPS Status Indicator */}
+            {gpsStatus !== 'active' && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/60 rounded-xl border border-slate-700/40">
+                <div className={`w-1.5 h-1.5 rounded-full ${
+                  gpsStatus === 'waiting' ? 'bg-yellow-400 animate-pulse' :
+                  gpsStatus === 'error' ? 'bg-red-500' : 'bg-gray-500'
+                }`} />
+                <span className="text-[9px] text-gray-400">
+                  {gpsStatus === 'waiting' ? '正在獲取GPS位置...' :
+                   gpsStatus === 'error' ? '⚠️ GPS 無法定位，步行時間由上車站估算' :
+                   '⚠️ GPS 不可用，步行時間由上車站估算'}
+                </span>
+              </div>
             )}
           </div>
         )}

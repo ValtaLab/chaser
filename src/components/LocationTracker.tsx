@@ -23,6 +23,23 @@ export default function LocationTracker() {
     let watchId: number;
 
     const startTracking = () => {
+      // First: getCurrentPosition to trigger permission dialog (iOS PWA needs this)
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          updateLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+          setError(null);
+        },
+        (err) => {
+          console.error('Geolocation getCurrentPosition error:', err);
+          if (err.code === 1) { // PERMISSION_DENIED
+            setError('位置權限被拒絕，請在 Safari 設定中允許');
+            return;
+          }
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+      );
+
+      // Then: continuous tracking
       watchId = navigator.geolocation.watchPosition(
         (position) => {
           updateLocation({

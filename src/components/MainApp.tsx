@@ -493,6 +493,10 @@ export default function MainApp() {
           <div className="w-32 h-1 rounded-full bg-gray-200" />
         </div>
       </nav>
+      {/* Build version */}
+      <div className="fixed bottom-20 left-0 right-0 text-center pointer-events-none" style={{ zIndex: 1 }}>
+        <span className="text-[8px] text-gray-500/40">v20260618.2</span>
+      </div>
     </div>
   );
 }
