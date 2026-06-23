@@ -1,113 +1,177 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAppStore } from '@/stores/appStore';
 
 export default function LocationTracker() {
-  const { currentLocation, updateLocation, isTracking } = useAppStore();
+  const { currentLocation, updateLocation } = useAppStore();
   const [error, setError] = useState<string | null>(null);
-  const [permission, setPermission] = useState<PermissionState>('prompt');
+  const [hasFix, setHasFix] = useState(false);
+  const mapRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mapInstanceRef = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const markerRef = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const isTracking = useRef(false);
 
+  // ── Location tracking (always on when this component mounts) ──────
   useEffect(() => {
-    if (navigator.permissions) {
-      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-        setPermission(result.state);
-        result.onchange = () => setPermission(result.state);
-      });
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!isTracking) return;
+    if (isTracking.current) return;
+    isTracking.current = true;
 
     let watchId: number;
 
-    const startTracking = () => {
-      // First: getCurrentPosition to trigger permission dialog (iOS PWA needs this)
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          updateLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
-          setError(null);
-        },
-        (err) => {
-          console.error('Geolocation getCurrentPosition error:', err);
-          if (err.code === 1) { // PERMISSION_DENIED
-            setError('位置權限被拒絕，請在 Safari 設定中允許');
-            return;
-          }
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-      );
-
-      // Then: continuous tracking
-      watchId = navigator.geolocation.watchPosition(
-        (position) => {
-          updateLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          setError(null);
-        },
-        (err) => {
-          setError(err.message);
-          console.error('Geolocation error:', err);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        }
-      );
+    const onPosition = (pos: GeolocationPosition) => {
+      updateLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      setHasFix(true);
+      setError(null);
     };
 
-    startTracking();
+    const onError = (err: GeolocationPositionError) => {
+      if (err.code === 1) {
+        setError('位置權限被拒絕');
+      } else if (!hasFix) {
+        setError(err.message);
+      }
+      // Silently ignore errors after we already have a fix
+    };
+
+    // getCurrentPosition first (iOS PWA needs this to trigger permission dialog)
+    navigator.geolocation.getCurrentPosition(onPosition, onError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 60000,
+    });
+
+    // Continuous tracking
+    watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    });
 
     return () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+      isTracking.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Init Leaflet map ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return;
+
+    const initMap = async () => {
+      const L = (await import('leaflet')).default;
+      await import('leaflet/dist/leaflet.css');
+
+      const map = L.map(mapRef.current!, {
+        zoomControl: false,
+        attributionControl: false,
+        dragging: false,
+        scrollWheelZoom: false,
+        touchZoom: false,
+        doubleClickZoom: false,
+        keyboard: false,
+      }).setView([22.3193, 114.1694], 12);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {}).addTo(map);
+
+      mapInstanceRef.current = map;
+      setMapReady(true);
+    };
+
+    initMap();
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        markerRef.current = null;
       }
     };
-  }, [isTracking, updateLocation]);
+  }, []);
 
-  if (permission === 'denied') {
-    return (
-      <div className="bg-white border border-red-200 rounded-xl p-3 shadow-sm animate-scale-in">
-        <div className="flex items-center gap-2">
-          <span className="text-sm">📍</span>
-          <div>
-            <p className="text-xs font-medium text-red-600">定位權限被拒絕</p>
-            <p className="text-[10px] text-gray-400 mt-0.5">請在瀏覽器設定中允許</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // ── Update marker when location changes ───────────────────────────
+  useEffect(() => {
+    if (!mapReady || !mapInstanceRef.current || !currentLocation) return;
 
-  if (error) {
-    return (
-      <div className="bg-white border border-yellow-200 rounded-xl p-3 shadow-sm animate-scale-in">
-        <div className="flex items-center gap-2">
-          <span className="text-sm">⚠️</span>
-          <div>
-            <p className="text-xs font-medium text-yellow-600">定位錯誤</p>
-            <p className="text-[10px] text-gray-400 mt-0.5 truncate">{error}</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    const updateMarker = async () => {
+      const L = (await import('leaflet')).default;
+      const map = mapInstanceRef.current;
 
-  if (!isTracking) {
-    return null;
-  }
+      if (markerRef.current) {
+        markerRef.current.setLatLng([currentLocation.lat, currentLocation.lng]);
+      } else {
+        // User requested red dot for location
+        const icon = L.divIcon({
+          className: '',
+          html: '<div style="width:22px;height:22px;background:#ef4444;border:3.5px solid white;border-radius:50%;box-shadow:0 0 16px rgba(239,68,68,0.6);"></div>',
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        });
+        markerRef.current = L.marker([currentLocation.lat, currentLocation.lng], { icon }).addTo(map);
+      }
 
+      map.setView([currentLocation.lat, currentLocation.lng], 15);
+    };
+
+    updateMarker();
+  }, [currentLocation, mapReady]);
+
+  // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="flex items-center gap-2 px-1">
-      <div className="relative">
-        <div className="w-2 h-2 bg-green-500 rounded-full" />
-        <div className="absolute inset-0 w-2 h-2 bg-green-500 rounded-full animate-ping" />
+    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+      <div className="relative h-40 bg-gray-100">
+        {/* Map */}
+        <div ref={mapRef} className="w-full h-full" />
+
+        {/* Bottom gradient for text readability */}
+        <div className="absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
+
+        {/* Status badge */}
+        <div className="absolute top-3 left-3">
+          <div className="bg-white/90 backdrop-blur-sm rounded-lg px-2.5 py-1.5 shadow-sm">
+            <div className="flex items-center gap-1.5">
+              {hasFix ? (
+                <>
+                  <div className="relative w-2 h-2">
+                    <div className="absolute inset-0 w-2 h-2 bg-green-500 rounded-full animate-ping opacity-75" />
+                    <div className="w-2 h-2 bg-green-500 rounded-full relative" />
+                  </div>
+                  <span className="text-[11px] font-medium text-gray-700">已定位</span>
+                </>
+              ) : (
+                <>
+                  <div className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                  <span className="text-[11px] font-medium text-gray-500">定位中...</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Coordinates hint */}
+        {hasFix && currentLocation && (
+          <div className="absolute bottom-3 left-3">
+            <p className="text-xs text-white/90 font-medium drop-shadow-md">
+              {currentLocation.lat.toFixed(5)}, {currentLocation.lng.toFixed(5)}
+            </p>
+          </div>
+        )}
+
+        {/* Permission denied / error overlay */}
+        {error && !hasFix && (
+          <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="text-center">
+              <span className="text-2xl">📍</span>
+              <p className="text-sm font-medium text-gray-600 mt-1">{error}</p>
+              <p className="text-[11px] text-gray-400 mt-0.5">請檢查位置權限設定</p>
+            </div>
+          </div>
+        )}
       </div>
-      <span className="text-[11px] text-green-600 font-medium">GPS 追蹤中</span>
     </div>
   );
 }
