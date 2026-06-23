@@ -178,7 +178,7 @@ export default function MapView({
         const stopName = seg.fromStop.nameZh || seg.fromStop.name;
         const labelIcon = L.divIcon({
           className: '',
-          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;left:-4px;">
+          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
             <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;">
               ${stopName}
             </div>
@@ -187,24 +187,25 @@ export default function MapView({
           iconSize: [0, 0],
         });
         return (
-          <CircleMarker
-            key={`from-${seg.id}`}
-            center={[loc.lat, loc.lng]}
-            radius={8}
-            pathOptions={{
-              color: '#ffffff',
-              fillColor: segColor,
-              fillOpacity: 1,
-              weight: 3,
-            }}
-          >
-            <Popup>
-              <span className="font-medium">🟢 上車: {seg.fromStop.nameZh || seg.fromStop.name}</span>
-              <br />
-              <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
-            </Popup>
+          <div key={`from-group-${seg.id}`}>
+            <CircleMarker
+              center={[loc.lat, loc.lng]}
+              radius={8}
+              pathOptions={{
+                color: '#ffffff',
+                fillColor: segColor,
+                fillOpacity: 1,
+                weight: 3,
+              }}
+            >
+              <Popup>
+                <span className="font-medium">🟢 上車: {seg.fromStop.nameZh || seg.fromStop.name}</span>
+                <br />
+                <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
+              </Popup>
+            </CircleMarker>
             <Marker position={[loc.lat, loc.lng]} icon={labelIcon} />
-          </CircleMarker>
+          </div>
         );
       })}
 
@@ -225,24 +226,25 @@ export default function MapView({
           iconSize: [0, 0],
         });
         return (
-          <CircleMarker
-            key={`to-${seg.id}`}
-            center={[loc.lat, loc.lng]}
-            radius={8}
-            pathOptions={{
-              color: '#ffffff',
-              fillColor: segColor,
-              fillOpacity: 0.7,
-              weight: 3,
-            }}
-          >
-            <Popup>
-              <span className="font-medium">🔴 落車: {seg.toStop.nameZh || seg.toStop.name}</span>
-              <br />
-              <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
-            </Popup>
+          <div key={`to-group-${seg.id}`}>
+            <CircleMarker
+              center={[loc.lat, loc.lng]}
+              radius={8}
+              pathOptions={{
+                color: '#ffffff',
+                fillColor: segColor,
+                fillOpacity: 0.7,
+                weight: 3,
+              }}
+            >
+              <Popup>
+                <span className="font-medium">🔴 落車: {seg.toStop.nameZh || seg.toStop.name}</span>
+                <br />
+                <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
+              </Popup>
+            </CircleMarker>
             <Marker position={[loc.lat, loc.lng]} icon={labelIcon} />
-          </CircleMarker>
+          </div>
         );
       })}
 
@@ -259,22 +261,23 @@ export default function MapView({
           iconSize: [0, 0],
         });
         return (
-          <CircleMarker
-            key={`transfer-${i}`}
-            center={[tm.location.lat, tm.location.lng]}
-            radius={10}
-            pathOptions={{
-              color: '#ffffff',
-              fillColor: '#f59e0b',
-              fillOpacity: 1,
-              weight: 3,
-            }}
-          >
-            <Popup>
-              <span className="text-sm font-medium">{tm.label}</span>
-            </Popup>
+          <div key={`transfer-group-${i}`}>
+            <CircleMarker
+              center={[tm.location.lat, tm.location.lng]}
+              radius={10}
+              pathOptions={{
+                color: '#ffffff',
+                fillColor: '#f59e0b',
+                fillOpacity: 1,
+                weight: 3,
+              }}
+            >
+              <Popup>
+                <span className="text-sm font-medium">{tm.label}</span>
+              </Popup>
+            </CircleMarker>
             <Marker position={[tm.location.lat, tm.location.lng]} icon={labelIcon} />
-          </CircleMarker>
+          </div>
         );
       })}
 
