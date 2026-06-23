@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, Marker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import type { CommuteRoute, Location } from '@/types';
@@ -25,6 +25,69 @@ function FitBounds({ points }: { points: Location[] }) {
     const bounds = L.latLngBounds(points.map(p => [p.lat, p.lng]));
     map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
   }, [points, map]);
+  return null;
+}
+
+// ─── MapLabels: bubble-style labels via Leaflet API ─────────────────
+interface MapLabelsProps {
+  segments: CommuteRoute['segments'];
+  transferMarkers: Array<{ location: Location; label: string }>;
+}
+function MapLabels({ segments, transferMarkers }: MapLabelsProps) {
+  const map = useMap();
+  const markersRef = useRef<L.Marker[]>([]);
+
+  useEffect(() => {
+    // Clear previous markers
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
+
+    const newMarkers: L.Marker[] = [];
+
+    const addLabel = (lat: number, lng: number, text: string, side: 'left' | 'right' | 'center') => {
+      const leftOffset = side === 'left' ? '-8px' : side === 'right' ? '8px' : '0px';
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+          <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;position:relative;left:${leftOffset};">
+            ${text}
+          </div>
+          <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid rgba(255,255,255,0.92);"></div>
+        </div>`,
+        iconSize: [0, 0],
+      });
+      const m = L.marker([lat, lng], { icon, interactive: false, keyboard: false }).addTo(map);
+      newMarkers.push(m);
+    };
+
+    // Boarding stops
+    for (const seg of segments) {
+      const loc = seg.fromStop?.location;
+      if (loc && (loc.lat !== 0 || loc.lng !== 0)) {
+        addLabel(loc.lat, loc.lng, seg.fromStop.nameZh || seg.fromStop.name, 'left');
+      }
+    }
+
+    // Alighting stops
+    for (const seg of segments) {
+      const loc = seg.toStop?.location;
+      if (loc && (loc.lat !== 0 || loc.lng !== 0)) {
+        addLabel(loc.lat, loc.lng, seg.toStop.nameZh || seg.toStop.name, 'right');
+      }
+    }
+
+    // Transfer stops
+    for (const tm of transferMarkers) {
+      addLabel(tm.location.lat, tm.location.lng, `🔄 ${tm.label.replace(/^🔄\s*/, '')}`, 'center');
+    }
+
+    markersRef.current = newMarkers;
+
+    return () => {
+      newMarkers.forEach(m => m.remove());
+    };
+  }, [segments, transferMarkers, map]);
+
   return null;
 }
 
@@ -97,30 +160,6 @@ export default function MapView({
     return markers;
   }, [segments]);
 
-  // ── Inject bubble label styles ───────────────────────────────────
-  useEffect(() => {
-    const id = 'chaser-map-label-styles';
-    if (document.getElementById(id)) return;
-    const style = document.createElement('style');
-    style.id = id;
-    style.textContent = `
-      .map-label-bubble {
-        background: rgba(255,255,255,0.92) !important;
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 3px 9px !important;
-        font-size: 11px !important;
-        font-weight: 600 !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
-        white-space: nowrap !important;
-        color: #1f2937 !important;
-        backdrop-filter: blur(4px) !important;
-      }
-  `;
-    document.head.appendChild(style);
-    return () => { const el = document.getElementById(id); if (el) el.remove(); };
-  }, []);
-
   return (
     <MapContainer
       center={[center.lat, center.lng]}
@@ -132,6 +171,7 @@ export default function MapView({
     >
       <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
       <FitBounds points={allPoints} />
+      <MapLabels segments={segments} transferMarkers={transferMarkers} />
 
       {/* Full route polylines per segment (colored) */}
       {routePolylines && routePolylines.map((poly, i) => {
@@ -170,116 +210,76 @@ export default function MapView({
         />
       )}
 
-      {/* Boarding stop markers (green) + label */}
+      {/* Boarding stop markers (green) */}
       {segments.map((seg, i) => {
         const loc = seg.fromStop?.location;
         if (!loc || (loc.lat === 0 && loc.lng === 0)) return null;
         const segColor = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
-        const stopName = seg.fromStop.nameZh || seg.fromStop.name;
-        const labelIcon = L.divIcon({
-          className: '',
-          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-            <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;">
-              ${stopName}
-            </div>
-            <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid rgba(255,255,255,0.92);"></div>
-          </div>`,
-          iconSize: [0, 0],
-        });
         return (
-          <div key={`from-group-${seg.id}`}>
-            <CircleMarker
-              center={[loc.lat, loc.lng]}
-              radius={8}
-              pathOptions={{
-                color: '#ffffff',
-                fillColor: segColor,
-                fillOpacity: 1,
-                weight: 3,
-              }}
-            >
-              <Popup>
-                <span className="font-medium">🟢 上車: {seg.fromStop.nameZh || seg.fromStop.name}</span>
-                <br />
-                <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
-              </Popup>
-            </CircleMarker>
-            <Marker position={[loc.lat, loc.lng]} icon={labelIcon} />
-          </div>
+          <CircleMarker
+            key={`from-${seg.id}`}
+            center={[loc.lat, loc.lng]}
+            radius={8}
+            pathOptions={{
+              color: '#ffffff',
+              fillColor: segColor,
+              fillOpacity: 1,
+              weight: 3,
+            }}
+          >
+            <Popup>
+              <span className="font-medium">🟢 上車: {seg.fromStop.nameZh || seg.fromStop.name}</span>
+              <br />
+              <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
+            </Popup>
+          </CircleMarker>
         );
       })}
 
-      {/* Alighting stop marker — each segment's destination + label */}
+      {/* Alighting stop marker — each segment's destination */}
       {segments.map((seg, i) => {
         const loc = seg.toStop?.location;
         if (!loc || (loc.lat === 0 && loc.lng === 0)) return null;
         const segColor = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
-        const stopName = seg.toStop.nameZh || seg.toStop.name;
-        const labelIcon = L.divIcon({
-          className: '',
-          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;left:4px;">
-            <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;">
-              ${stopName}
-            </div>
-            <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid rgba(255,255,255,0.92);"></div>
-          </div>`,
-          iconSize: [0, 0],
-        });
         return (
-          <div key={`to-group-${seg.id}`}>
-            <CircleMarker
-              center={[loc.lat, loc.lng]}
-              radius={8}
-              pathOptions={{
-                color: '#ffffff',
-                fillColor: segColor,
-                fillOpacity: 0.7,
-                weight: 3,
-              }}
-            >
-              <Popup>
-                <span className="font-medium">🔴 落車: {seg.toStop.nameZh || seg.toStop.name}</span>
-                <br />
-                <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
-              </Popup>
-            </CircleMarker>
-            <Marker position={[loc.lat, loc.lng]} icon={labelIcon} />
-          </div>
+          <CircleMarker
+            key={`to-${seg.id}`}
+            center={[loc.lat, loc.lng]}
+            radius={8}
+            pathOptions={{
+              color: '#ffffff',
+              fillColor: segColor,
+              fillOpacity: 0.7,
+              weight: 3,
+            }}
+          >
+            <Popup>
+              <span className="font-medium">🔴 落車: {seg.toStop.nameZh || seg.toStop.name}</span>
+              <br />
+              <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
+            </Popup>
+          </CircleMarker>
         );
       })}
 
-      {/* Transfer markers (amber) + label */}
-      {transferMarkers.map((tm, i) => {
-        const labelIcon = L.divIcon({
-          className: '',
-          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;left:0px;">
-            <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;">
-              🔄 ${tm.label.replace(/^🔄\s*/, '')}
-            </div>
-            <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid rgba(255,255,255,0.92);"></div>
-          </div>`,
-          iconSize: [0, 0],
-        });
-        return (
-          <div key={`transfer-group-${i}`}>
-            <CircleMarker
-              center={[tm.location.lat, tm.location.lng]}
-              radius={10}
-              pathOptions={{
-                color: '#ffffff',
-                fillColor: '#f59e0b',
-                fillOpacity: 1,
-                weight: 3,
-              }}
-            >
-              <Popup>
-                <span className="text-sm font-medium">{tm.label}</span>
-              </Popup>
-            </CircleMarker>
-            <Marker position={[tm.location.lat, tm.location.lng]} icon={labelIcon} />
-          </div>
-        );
-      })}
+      {/* Transfer markers (amber) */}
+      {transferMarkers.map((tm, i) => (
+        <CircleMarker
+          key={`transfer-${i}`}
+          center={[tm.location.lat, tm.location.lng]}
+          radius={10}
+          pathOptions={{
+            color: '#ffffff',
+            fillColor: '#f59e0b',
+            fillOpacity: 1,
+            weight: 3,
+          }}
+        >
+          <Popup>
+            <span className="text-sm font-medium">{tm.label}</span>
+          </Popup>
+        </CircleMarker>
+      ))}
 
       {/* User location (blue pulse) */}
       {currentLocation && (
