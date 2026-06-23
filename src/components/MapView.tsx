@@ -36,55 +36,63 @@ interface MapLabelsProps {
 function MapLabels({ segments, transferMarkers }: MapLabelsProps) {
   const map = useMap();
   const markersRef = useRef<L.Marker[]>([]);
+  const initializedRef = useRef(false);
 
   useEffect(() => {
-    // Clear previous markers
-    markersRef.current.forEach(m => m.remove());
-    markersRef.current = [];
+    if (!map) return;
 
-    const newMarkers: L.Marker[] = [];
+    const init = () => {
+      // Clear previous markers
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
 
-    const addLabel = (lat: number, lng: number, text: string, side: 'left' | 'right' | 'center') => {
-      const leftOffset = side === 'left' ? '-8px' : side === 'right' ? '8px' : '0px';
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-          <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;position:relative;left:${leftOffset};">
-            ${text}
-          </div>
-          <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid rgba(255,255,255,0.92);"></div>
-        </div>`,
-        iconSize: [0, 0],
-      });
-      const m = L.marker([lat, lng], { icon, interactive: false, keyboard: false }).addTo(map);
-      newMarkers.push(m);
+      const newMarkers: L.Marker[] = [];
+
+      const addLabel = (lat: number, lng: number, text: string) => {
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+            <div style="background:rgba(255,255,255,0.95);backdrop-filter:blur(4px);border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,0.25);white-space:nowrap;color:#1f2937;border:1px solid rgba(255,255,255,0.9);">
+              ${text}
+            </div>
+            <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid rgba(255,255,255,0.95);"></div>
+          </div>`,
+        });
+        const m = L.marker([lat, lng], { icon, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map);
+        newMarkers.push(m);
+      };
+
+      // Boarding stops
+      for (const seg of segments) {
+        const loc = seg.fromStop?.location;
+        if (loc && (loc.lat !== 0 || loc.lng !== 0)) {
+          addLabel(loc.lat, loc.lng, `🚏 ${seg.fromStop.nameZh || seg.fromStop.name}`);
+        }
+      }
+
+      // Alighting stops
+      for (const seg of segments) {
+        const loc = seg.toStop?.location;
+        if (loc && (loc.lat !== 0 || loc.lng !== 0)) {
+          addLabel(loc.lat, loc.lng, `⬇ ${seg.toStop.nameZh || seg.toStop.name}`);
+        }
+      }
+
+      // Transfer stops
+      for (const tm of transferMarkers) {
+        addLabel(tm.location.lat, tm.location.lng, tm.label);
+      }
+
+      markersRef.current = newMarkers;
+      initializedRef.current = true;
     };
 
-    // Boarding stops
-    for (const seg of segments) {
-      const loc = seg.fromStop?.location;
-      if (loc && (loc.lat !== 0 || loc.lng !== 0)) {
-        addLabel(loc.lat, loc.lng, seg.fromStop.nameZh || seg.fromStop.name, 'left');
-      }
-    }
-
-    // Alighting stops
-    for (const seg of segments) {
-      const loc = seg.toStop?.location;
-      if (loc && (loc.lat !== 0 || loc.lng !== 0)) {
-        addLabel(loc.lat, loc.lng, seg.toStop.nameZh || seg.toStop.name, 'right');
-      }
-    }
-
-    // Transfer stops
-    for (const tm of transferMarkers) {
-      addLabel(tm.location.lat, tm.location.lng, `🔄 ${tm.label.replace(/^🔄\s*/, '')}`, 'center');
-    }
-
-    markersRef.current = newMarkers;
+    map.whenReady(init);
 
     return () => {
-      newMarkers.forEach(m => m.remove());
+      markersRef.current.forEach(m => m.remove());
+      markersRef.current = [];
+      initializedRef.current = false;
     };
   }, [segments, transferMarkers, map]);
 
