@@ -20,7 +20,6 @@ const DIRECTION_STYLES = {
     gradient: 'from-blue-50 to-blue-100/50',
     border: 'border-blue-300/70',
     accentGlow: 'shadow-blue-200/50',
-    strip: 'from-blue-500 to-blue-400',
     btn: 'from-blue-600 to-blue-500',
     btnHover: 'from-blue-500 to-blue-400',
     badge: 'badge-blue',
@@ -30,7 +29,6 @@ const DIRECTION_STYLES = {
     gradient: 'from-amber-50 to-amber-100/50',
     border: 'border-amber-300/70',
     accentGlow: 'shadow-amber-200/50',
-    strip: 'from-amber-500 to-amber-400',
     btn: 'from-amber-600 to-amber-500',
     btnHover: 'from-amber-500 to-amber-400',
     badge: 'badge-amber',
@@ -181,9 +179,6 @@ export default function SwipeableRouteCard({ route, onStart, onEdit, onDelete, i
           onTouchEnd={handleTouchEnd}
           onMouseDown={handleMouseDown}
         >
-          {/* Accent gradient strip */}
-          <div className={`absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b ${isActive ? 'from-green-400 to-emerald-500' : dir.strip}`} />
-
           {/* Shimmer effect on hover */}
           <div className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-500 pointer-events-none animate-shimmer" />
 
