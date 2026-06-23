@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, Marker, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import type { CommuteRoute, Location } from '@/types';
@@ -170,11 +170,22 @@ export default function MapView({
         />
       )}
 
-      {/* Boarding stop markers (green) */}
+      {/* Boarding stop markers (green) + label */}
       {segments.map((seg, i) => {
         const loc = seg.fromStop?.location;
         if (!loc || (loc.lat === 0 && loc.lng === 0)) return null;
         const segColor = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+        const stopName = seg.fromStop.nameZh || seg.fromStop.name;
+        const labelIcon = L.divIcon({
+          className: '',
+          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;left:-4px;">
+            <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;">
+              ${stopName}
+            </div>
+            <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid rgba(255,255,255,0.92);"></div>
+          </div>`,
+          iconSize: [0, 0],
+        });
         return (
           <CircleMarker
             key={`from-${seg.id}`}
@@ -192,20 +203,27 @@ export default function MapView({
               <br />
               <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
             </Popup>
-            <Tooltip permanent direction="top" offset={[0, -12]} className="map-label-bubble map-label-boarding">
-              <span className="flex items-center gap-1">
-                <span>{seg.fromStop.nameZh || seg.fromStop.name}</span>
-              </span>
-            </Tooltip>
+            <Marker position={[loc.lat, loc.lng]} icon={labelIcon} />
           </CircleMarker>
         );
       })}
 
-      {/* Alighting stop marker — each segment's destination */}
+      {/* Alighting stop marker — each segment's destination + label */}
       {segments.map((seg, i) => {
         const loc = seg.toStop?.location;
         if (!loc || (loc.lat === 0 && loc.lng === 0)) return null;
         const segColor = SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+        const stopName = seg.toStop.nameZh || seg.toStop.name;
+        const labelIcon = L.divIcon({
+          className: '',
+          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;left:4px;">
+            <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;">
+              ${stopName}
+            </div>
+            <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid rgba(255,255,255,0.92);"></div>
+          </div>`,
+          iconSize: [0, 0],
+        });
         return (
           <CircleMarker
             key={`to-${seg.id}`}
@@ -223,38 +241,42 @@ export default function MapView({
               <br />
               <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
             </Popup>
-            <Tooltip permanent direction="top" offset={[0, -12]} className="map-label-bubble map-label-alighting">
-              <span className="flex items-center gap-1">
-                <span>{seg.toStop.nameZh || seg.toStop.name}</span>
-              </span>
-            </Tooltip>
+            <Marker position={[loc.lat, loc.lng]} icon={labelIcon} />
           </CircleMarker>
         );
       })}
 
-      {/* Transfer markers (amber) */}
-      {transferMarkers.map((tm, i) => (
-        <CircleMarker
-          key={`transfer-${i}`}
-          center={[tm.location.lat, tm.location.lng]}
-          radius={10}
-          pathOptions={{
-            color: '#ffffff',
-            fillColor: '#f59e0b',
-            fillOpacity: 1,
-            weight: 3,
-          }}
-        >
-          <Popup>
-            <span className="text-sm font-medium">{tm.label}</span>
-          </Popup>
-          <Tooltip permanent direction="top" offset={[0, -14]} className="map-label-bubble map-label-transfer">
-            <span className="flex items-center gap-1">
-              <span>🔄 {tm.label.replace(/^🔄\s*/, '')}</span>
-            </span>
-          </Tooltip>
-        </CircleMarker>
-      ))}
+      {/* Transfer markers (amber) + label */}
+      {transferMarkers.map((tm, i) => {
+        const labelIcon = L.divIcon({
+          className: '',
+          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;left:0px;">
+            <div style="background:rgba(255,255,255,0.92);backdrop-filter:blur(4px);border-radius:8px;padding:2px 8px;font-size:11px;font-weight:600;box-shadow:0 2px 8px rgba(0,0,0,0.18);white-space:nowrap;color:#1f2937;">
+              🔄 ${tm.label.replace(/^🔄\s*/, '')}
+            </div>
+            <div style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:4px solid rgba(255,255,255,0.92);"></div>
+          </div>`,
+          iconSize: [0, 0],
+        });
+        return (
+          <CircleMarker
+            key={`transfer-${i}`}
+            center={[tm.location.lat, tm.location.lng]}
+            radius={10}
+            pathOptions={{
+              color: '#ffffff',
+              fillColor: '#f59e0b',
+              fillOpacity: 1,
+              weight: 3,
+            }}
+          >
+            <Popup>
+              <span className="text-sm font-medium">{tm.label}</span>
+            </Popup>
+            <Marker position={[tm.location.lat, tm.location.lng]} icon={labelIcon} />
+          </CircleMarker>
+        );
+      })}
 
       {/* User location (blue pulse) */}
       {currentLocation && (
