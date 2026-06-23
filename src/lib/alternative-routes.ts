@@ -85,7 +85,7 @@ export async function findAlternativesForSegment(
         const maxWaitMinutes = isLastBusPassed ? 120 : 60;
         if (eta.minutesAway > maxWaitMinutes) continue;
 
-        // Check if this route goes toward the user's destination
+        // Check if this route actually goes toward and serves the user's destination
         const goesTowardDestination = isGoingToward(
           eta.destination,
           userDestination,
@@ -95,6 +95,39 @@ export async function findAlternativesForSegment(
         console.log('[AltRoutes:Bus]', eta.route, '→', eta.destination, '| match:', goesTowardDestination);
 
         if (!goesTowardDestination) continue;
+
+        // ── Pass 2: verify the route actually serves the destination stop ──
+        // Direct matches are reliable. For "nearby" (area keyword) matches,
+        // we need to verify the route's stop sequence to avoid false positives
+        // (e.g. circular routes in the same district that don't serve the stop).
+        if (goesTowardDestination === 'nearby' && company === 'KMB') {
+          // Fetch route info to get bound + service_type
+          let routeVerified = false;
+          try {
+            const { getKMBRouteInfo } = await import('./bus-api');
+            const routeInfos = await getKMBRouteInfo(eta.route);
+            for (const ri of routeInfos) {
+              const verified = await routeServesKMBStop(
+                eta.route,
+                ri.bound as 'I' | 'O',
+                ri.service_type,
+                segment.fromStop.id,
+                userDestination,
+                segment.toStop.location,
+              );
+              if (verified) {
+                routeVerified = true;
+                break;
+              }
+            }
+          } catch (err) {
+            console.error('[AltRoutes:Bus] Verification error:', eta.route, err);
+          }
+          if (!routeVerified) {
+            console.log('[AltRoutes:Bus]', eta.route, '→ SKIP (does not serve destination stop)');
+            continue;
+          }
+        }
 
         // Estimate ride time using haversine distance
         const rideMinutes = estimateBusRideMinutes(
@@ -398,6 +431,74 @@ function findConnectingLines(fromStationCode: string, toStationCode: string): st
 
 // Module-level cache for KMB route list
 let kmbRouteListCache: Array<{ route: string; bound: string; service_type: string; orig_tc: string; dest_tc: string }> | null = null;
+
+// Module-level cache for KMB stop info (used during route verification)
+const kmbStopInfoCache = new Map<string, { name_tc: string; lat: number; long: number } | null>();
+
+async function getKMBStopInfoCached(stopId: string) {
+  if (kmbStopInfoCache.has(stopId)) return kmbStopInfoCache.get(stopId);
+  const { getKMBStopInfo } = await import('./bus-api');
+  try {
+    const info = await getKMBStopInfo(stopId);
+    if (info) {
+      const data = { name_tc: info.name_tc, lat: info.lat, long: info.long };
+      kmbStopInfoCache.set(stopId, data);
+      return data;
+    }
+  } catch { /* ignore */ }
+  kmbStopInfoCache.set(stopId, null);
+  return null;
+}
+
+/**
+ * Verify that a KMB route actually serves the user's destination stop.
+ * Fetches the route's stop sequence and checks if the destination stop
+ * appears AFTER the boarding stop (same direction check).
+ */
+async function routeServesKMBStop(
+  routeName: string,
+  bound: 'I' | 'O',
+  serviceType: string,
+  fromStopId: string,
+  toStopNameZh: string,
+  toStopLocation?: Location,
+): Promise<boolean> {
+  try {
+    const { getKMBRouteStops } = await import('./bus-api');
+    const stops = await getKMBRouteStops(routeName, bound, serviceType);
+
+    // Find boarding stop position
+    const fromIdx = stops.findIndex(s => s.stop === fromStopId);
+    if (fromIdx === -1) return false;  // route doesn't use this stop
+
+    // Only check stops AFTER boarding (must be in same direction)
+    const remaining = stops.slice(fromIdx + 1);
+    if (remaining.length === 0) return false;
+
+    const destBase = toStopNameZh.replace(/[\s(（][^)]*[)）]?$/, '').trim();
+
+    for (const s of remaining) {
+      const info = await getKMBStopInfoCached(s.stop);
+      if (!info) continue;
+
+      // Name match (strip parenthetical suffixes)
+      const stopBase = info.name_tc.replace(/[\s(（][^)]*[)）]?$/, '').trim();
+      if (stopBase.includes(destBase) || destBase.includes(stopBase)) {
+        return true;
+      }
+
+      // Coordinate proximity check (within 400m)
+      if (toStopLocation && typeof toStopLocation.lat === 'number') {
+        const dist = haversineMeters(toStopLocation, { lat: info.lat, lng: info.long });
+        if (dist < 400) return true;
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 async function getKMBRouteList() {
   if (kmbRouteListCache) return kmbRouteListCache;
