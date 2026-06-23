@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
-import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, CircleMarker, Popup, Tooltip, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import type { CommuteRoute, Location } from '@/types';
@@ -97,6 +97,30 @@ export default function MapView({
     return markers;
   }, [segments]);
 
+  // ── Inject bubble label styles ───────────────────────────────────
+  useEffect(() => {
+    const id = 'chaser-map-label-styles';
+    if (document.getElementById(id)) return;
+    const style = document.createElement('style');
+    style.id = id;
+    style.textContent = `
+      .map-label-bubble {
+        background: rgba(255,255,255,0.92) !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 3px 9px !important;
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.18) !important;
+        white-space: nowrap !important;
+        color: #1f2937 !important;
+        backdrop-filter: blur(4px) !important;
+      }
+  `;
+    document.head.appendChild(style);
+    return () => { const el = document.getElementById(id); if (el) el.remove(); };
+  }, []);
+
   return (
     <MapContainer
       center={[center.lat, center.lng]}
@@ -168,6 +192,11 @@ export default function MapView({
               <br />
               <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
             </Popup>
+            <Tooltip permanent direction="top" offset={[0, -12]} className="map-label-bubble map-label-boarding">
+              <span className="flex items-center gap-1">
+                <span>{seg.fromStop.nameZh || seg.fromStop.name}</span>
+              </span>
+            </Tooltip>
           </CircleMarker>
         );
       })}
@@ -194,6 +223,11 @@ export default function MapView({
               <br />
               <span className="text-xs text-gray-500">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
             </Popup>
+            <Tooltip permanent direction="top" offset={[0, -12]} className="map-label-bubble map-label-alighting">
+              <span className="flex items-center gap-1">
+                <span>{seg.toStop.nameZh || seg.toStop.name}</span>
+              </span>
+            </Tooltip>
           </CircleMarker>
         );
       })}
@@ -214,6 +248,11 @@ export default function MapView({
           <Popup>
             <span className="text-sm font-medium">{tm.label}</span>
           </Popup>
+          <Tooltip permanent direction="top" offset={[0, -14]} className="map-label-bubble map-label-transfer">
+            <span className="flex items-center gap-1">
+              <span>🔄 {tm.label.replace(/^🔄\s*/, '')}</span>
+            </span>
+          </Tooltip>
         </CircleMarker>
       ))}
 
