@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { fetchETA, calculateTotalJourney, type TransportETA } from '@/lib/eta-service';
 import { ChevronLeft } from 'lucide-react';
-import JourneyMonitor from './JourneyMonitor';
 import {
   findAlternativesForSegment,
   type SegmentAlternatives,
@@ -890,20 +889,48 @@ export default function TrackingView({
   const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSentLocRef = useRef<string>('');
 
-  // Journey start: POST route segments to worker on mount
+  // Journey start: POST route segments + push sub + auth to worker → activates DO
   useEffect(() => {
-    const segs = route.segments.map(s => ({
-      id: s.id,
-      type: s.route.type,
-      name: s.route.name,
-      fromStop: { id: s.fromStop.id, nameZh: s.fromStop.nameZh, location: s.fromStop.location },
-      toStop: { id: s.toStop.id, nameZh: s.toStop.nameZh, location: s.toStop.location },
-    }));
-    fetch(`${WORKER_URL}/journey/start`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ segments: segs }),
-    }).catch(() => {});
+    let cancelled = false;
+
+    (async () => {
+      // Get push subscription from SW
+      let pushSub: PushSubscriptionJSON | null = null;
+      try {
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.ready;
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) pushSub = sub.toJSON();
+        }
+      } catch {}
+
+      // Get JWT token
+      let token: string | null = null;
+      try {
+        const stored = localStorage.getItem('chaser_auth');
+        if (stored) token = JSON.parse(stored).token;
+      } catch {}
+
+      const segs = route.segments.map(s => ({
+        id: s.id,
+        type: s.route.type,
+        name: s.route.name,
+        fromStop: { id: s.fromStop.id, nameZh: s.fromStop.nameZh, location: s.fromStop.location },
+        toStop: { id: s.toStop.id, nameZh: s.toStop.nameZh, location: s.toStop.location },
+      }));
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      fetch(`${WORKER_URL}/journey/start`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          segments: segs,
+          ...(pushSub ? { pushSub } : {}),
+        }),
+      }).catch(() => {});
+    })();
 
     // Pagehide: send last location before page is hidden
     const onHide = () => {
@@ -915,10 +942,16 @@ export default function TrackingView({
     window.addEventListener('pagehide', onHide);
 
     return () => {
+      cancelled = true;
       window.removeEventListener('pagehide', onHide);
       if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
       // Journey end: cleanup on unmount
-      fetch(`${WORKER_URL}/journey/end`, { method: 'POST' }).catch(() => {});
+      const endHeaders: Record<string, string> = {};
+      try {
+        const stored = localStorage.getItem('chaser_auth');
+        if (stored) endHeaders['Authorization'] = `Bearer ${JSON.parse(stored).token}`;
+      } catch {}
+      fetch(`${WORKER_URL}/journey/end`, { method: 'POST', headers: endHeaders }).catch(() => {});
     };
   }, [route.segments]);
 
@@ -994,19 +1027,6 @@ export default function TrackingView({
           返回
         </button>
       )}
-
-      {/* ── Journey Monitor button ─────────────────────────── */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
-        <JourneyMonitor
-          segments={route.segments.map(s => ({
-            id: s.id,
-            type: s.route.type as string,
-            name: s.route.name,
-            fromStop: { id: s.fromStop.id, nameZh: s.fromStop.nameZh, location: s.fromStop.location },
-            toStop: { id: s.toStop.id, nameZh: s.toStop.nameZh, location: s.toStop.location },
-          }))}
-        />
-      </div>
 
       {/* ── ETA Floating Card (top-right) ───────────────────── */}
       {showETAPanel && (
