@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { fetchETA, calculateTotalJourney, type TransportETA } from '@/lib/eta-service';
 import { ChevronLeft } from 'lucide-react';
+import JourneyMonitor from './JourneyMonitor';
 import {
   findAlternativesForSegment,
   type SegmentAlternatives,
@@ -993,6 +994,19 @@ export default function TrackingView({
           返回
         </button>
       )}
+
+      {/* ── Journey Monitor button ─────────────────────────── */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000]">
+        <JourneyMonitor
+          segments={route.segments.map(s => ({
+            id: s.id,
+            type: s.route.type as string,
+            name: s.route.name,
+            fromStop: { id: s.fromStop.id, nameZh: s.fromStop.nameZh, location: s.fromStop.location },
+            toStop: { id: s.toStop.id, nameZh: s.toStop.nameZh, location: s.toStop.location },
+          }))}
+        />
+      </div>
 
       {/* ── ETA Floating Card (top-right) ───────────────────── */}
       {showETAPanel && (
