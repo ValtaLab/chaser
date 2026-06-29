@@ -75,7 +75,7 @@ export const MTR_STATIONS: MTRStation[] = [
   { line: 'KTL', stationId: 'HOM', stationCode: 'HOM', name_tc: '何文田', name_en: 'Ho Man Tin', lat: 22.3091, lng: 114.1815 },
   { line: 'KTL', stationId: 'YMT', stationCode: 'YMT', name_tc: '油麻地', name_en: 'Yau Ma Tei', lat: 22.3103, lng: 114.1709 },
   { line: 'KTL', stationId: 'MOK', stationCode: 'MOK', name_tc: '旺角', name_en: 'Mong Kok', lat: 22.3193, lng: 114.1694 },
-  { line: 'KTL', stationId: 'NTK', stationCode: 'NTK', name_tc: '旺角東', name_en: 'Mong Kok East', lat: 22.3230, lng: 114.1740 },
+  { line: 'KTL', stationId: 'PRE', stationCode: 'PRE', name_tc: '太子', name_en: 'Prince Edward', lat: 22.3248, lng: 114.1684 },
   { line: 'KTL', stationId: 'KOT', stationCode: 'KOT', name_tc: '九龍塘', name_en: 'Kowloon Tong', lat: 22.3372, lng: 114.1760 },
   { line: 'KTL', stationId: 'LOF', stationCode: 'LOF', name_tc: '樂富', name_en: 'Lok Fu', lat: 22.3383, lng: 114.1848 },
   { line: 'KTL', stationId: 'WTS', stationCode: 'WTS', name_tc: '黃大仙', name_en: 'Wong Tai Sin', lat: 22.3418, lng: 114.1935 },
@@ -110,7 +110,7 @@ export const MTR_STATIONS: MTRStation[] = [
   // East Rail Line (EAL)
   { line: 'EAL', stationId: 'ADM', stationCode: 'ADM', name_tc: '金鐘', name_en: 'Admiralty', lat: 22.2783, lng: 114.1647 },
   { line: 'EAL', stationId: 'EXC', stationCode: 'EXC', name_tc: '會展', name_en: 'Exhibition Centre', lat: 22.2783, lng: 114.1745 },
-  { line: 'EAL', stationId: 'HOM', stationCode: 'HOM', name_tc: '何文田', name_en: 'Ho Man Tin', lat: 22.3091, lng: 114.1815 },
+  { line: 'EAL', stationId: 'HUH', stationCode: 'HUH', name_tc: '紅磡', name_en: 'Hung Hom', lat: 22.3033, lng: 114.1815 },
   { line: 'EAL', stationId: 'MKK', stationCode: 'MKK', name_tc: '旺角東', name_en: 'Mong Kok East', lat: 22.3230, lng: 114.1740 },
   { line: 'EAL', stationId: 'KOT', stationCode: 'KOT', name_tc: '九龍塘', name_en: 'Kowloon Tong', lat: 22.3372, lng: 114.1760 },
   { line: 'EAL', stationId: 'TAW', stationCode: 'TAW', name_tc: '大圍', name_en: 'Tai Wai', lat: 22.3430, lng: 114.1810 },
@@ -119,6 +119,7 @@ export const MTR_STATIONS: MTRStation[] = [
   { line: 'EAL', stationId: 'RAC', stationCode: 'RAC', name_tc: '馬場', name_en: 'Racecourse', lat: 22.3993, lng: 114.2023 },
   { line: 'EAL', stationId: 'UNI', stationCode: 'UNI', name_tc: '大學', name_en: 'University', lat: 22.4028, lng: 114.2085 },
   { line: 'EAL', stationId: 'TAP', stationCode: 'TAP', name_tc: '大埔墟', name_en: 'Tai Po Market', lat: 22.4520, lng: 114.1680 },
+  { line: 'EAL', stationId: 'TWO', stationCode: 'TWO', name_tc: '太和', name_en: 'Tai Wo', lat: 22.4430, lng: 114.1770 },
   { line: 'EAL', stationId: 'FAN', stationCode: 'FAN', name_tc: '粉嶺', name_en: 'Fanling', lat: 22.4910, lng: 114.1390 },
   { line: 'EAL', stationId: 'SHS', stationCode: 'SHS', name_tc: '上水', name_en: 'Sheung Shui', lat: 22.5040, lng: 114.1290 },
   { line: 'EAL', stationId: 'LOW', stationCode: 'LOW', name_tc: '羅湖', name_en: 'Lo Wu', lat: 22.5280, lng: 114.1150 },
@@ -161,6 +162,7 @@ export const MTR_STATIONS: MTRStation[] = [
   { line: 'TKL', stationId: 'TKO', stationCode: 'TKO', name_tc: '將軍澳', name_en: 'Tseung Kwan O', lat: 22.3095, lng: 114.2575 },
   { line: 'TKL', stationId: 'LHP', stationCode: 'LHP', name_tc: '康城', name_en: 'LOHAS Park', lat: 22.2950, lng: 114.2710 },
   { line: 'TKL', stationId: 'HAH', stationCode: 'HAH', name_tc: '坑口', name_en: 'Hang Hau', lat: 22.3140, lng: 114.2620 },
+  { line: 'TKL', stationId: 'POA', stationCode: 'POA', name_tc: '寶琳', name_en: 'Po Lam', lat: 22.3170, lng: 114.2600 },
   
   // South Island Line (SIL)
   { line: 'SIL', stationId: 'ADM', stationCode: 'ADM', name_tc: '金鐘', name_en: 'Admiralty', lat: 22.2783, lng: 114.1647 },

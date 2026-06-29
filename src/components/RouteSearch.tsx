@@ -146,7 +146,7 @@ export default function RouteSearch({ onSelect, onCancel }: RouteSearchProps) {
     setStops(lineStations.map((s, i) => ({
       stopId: s.stationCode,
       name: s.name_tc,
-      seq: i,
+      seq: i + 1,
     })));
     setStep('from_stop');
   };

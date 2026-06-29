@@ -517,10 +517,10 @@ export default function RouteSetup({ editRoute, onDone, onSave }: RouteSetupProp
                               if (lineCode) {
                                 // Load MTR line stations
                                 const stations = getLineStations(lineCode);
-                                const options = stations.map(s => ({
+                                const options = stations.map((s, i) => ({
                                   id: s.stationCode,
                                   name: s.name_tc,
-                                  seq: 0,
+                                  seq: i + 1,
                                 }));
                                 setStopsOptions(prev => new Map(prev).set(index, options));
                                 setValidations(prev => new Map(prev).set(index, { status: 'valid', company: undefined, directions: [] }));
