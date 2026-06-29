@@ -884,10 +884,8 @@ export default function TrackingView({
   //     causing lock screen spam. See commit for full original code.
   // }, [liveLocation, route.segments, enrichmentDone]);
 
-  // ── Push notification network: journey start + location + pagehide ──
+  // ── Push notification network: journey start + end ──
   const WORKER_URL = 'https://chaser-auth.isearover.workers.dev';
-  const locationDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastSentLocRef = useRef<string>('');
 
   // Journey start: POST route segments + push sub + auth to worker → activates DO
   useEffect(() => {
@@ -932,19 +930,8 @@ export default function TrackingView({
       }).catch(() => {});
     })();
 
-    // Pagehide: send last location before page is hidden
-    const onHide = () => {
-      const loc = liveLocationRef.current;
-      if (loc) {
-        navigator.sendBeacon(`${WORKER_URL}/location`, JSON.stringify({ lat: loc.lat, lng: loc.lng }));
-      }
-    };
-    window.addEventListener('pagehide', onHide);
-
     return () => {
       cancelled = true;
-      window.removeEventListener('pagehide', onHide);
-      if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
       // Journey end: cleanup on unmount
       const endHeaders: Record<string, string> = {};
       try {
@@ -954,26 +941,6 @@ export default function TrackingView({
       fetch(`${WORKER_URL}/journey/end`, { method: 'POST', headers: endHeaders }).catch(() => {});
     };
   }, [route.segments]);
-
-  // Debounced location send: POST to worker on each GPS update
-  const liveLocationRef = useRef<Location | null>(null);
-  liveLocationRef.current = liveLocation;
-
-  useEffect(() => {
-    if (!liveLocation) return;
-    const key = `${liveLocation.lat.toFixed(4)},${liveLocation.lng.toFixed(4)}`;
-    if (key === lastSentLocRef.current) return; // Skip duplicate
-
-    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
-    locationDebounceRef.current = setTimeout(() => {
-      lastSentLocRef.current = key;
-      fetch(`${WORKER_URL}/location`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lat: liveLocation.lat, lng: liveLocation.lng }),
-      }).catch(() => {});
-    }, 10000); // Debounce 10s
-  }, [liveLocation]);
 
   // ── ETA urgency helpers ─────────────────────────────────────────
   const getEtaColor = (min: number) => {
