@@ -194,7 +194,7 @@ export default function LocationTracker() {
       </div>
 
       {/* Zoom / Fullscreen controls (outside Leaflet container) */}
-      <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
+      <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-[1000]">
         <button
           onClick={handleZoomIn}
           className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm flex items-center justify-center hover:bg-white transition-colors active:scale-90"
