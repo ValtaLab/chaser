@@ -151,7 +151,7 @@ export default function LocationTracker() {
         <div className="absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
 
         {/* Zoom / Fullscreen controls */}
-        <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
+        <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-[1100]">
           <button
             onClick={handleZoomIn}
             className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm flex items-center justify-center hover:bg-white transition-colors active:scale-90"
