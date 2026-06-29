@@ -142,42 +142,13 @@ export default function LocationTracker() {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 relative">
       <div ref={containerRef} className="relative h-40 bg-gray-100">
         {/* Map */}
         <div ref={mapRef} className="w-full h-full" />
 
         {/* Bottom gradient for text readability */}
         <div className="absolute bottom-0 left-0 right-0 h-14 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
-
-        {/* Zoom / Fullscreen controls */}
-        <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-[1100]">
-          <button
-            onClick={handleZoomIn}
-            className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm flex items-center justify-center hover:bg-white transition-colors active:scale-90"
-            aria-label="放大"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-          <button
-            onClick={handleZoomOut}
-            className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm flex items-center justify-center hover:bg-white transition-colors active:scale-90"
-            aria-label="縮小"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700"><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          </button>
-          <button
-            onClick={handleToggleFullscreen}
-            className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm flex items-center justify-center hover:bg-white transition-colors active:scale-90"
-            aria-label="全螢幕"
-          >
-            {isFullscreen ? (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-            )}
-          </button>
-        </div>
 
         {/* Status badge */}
         <div className="absolute top-3 left-3">
@@ -220,6 +191,35 @@ export default function LocationTracker() {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Zoom / Fullscreen controls (outside Leaflet container) */}
+      <div className="absolute top-3 right-3 flex flex-col gap-1.5 z-10">
+        <button
+          onClick={handleZoomIn}
+          className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm flex items-center justify-center hover:bg-white transition-colors active:scale-90"
+          aria-label="放大"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button
+          onClick={handleZoomOut}
+          className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm flex items-center justify-center hover:bg-white transition-colors active:scale-90"
+          aria-label="縮小"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <button
+          onClick={handleToggleFullscreen}
+          className="w-8 h-8 bg-white/90 backdrop-blur-sm rounded-lg shadow-sm flex items-center justify-center hover:bg-white transition-colors active:scale-90"
+          aria-label="全螢幕"
+        >
+          {isFullscreen ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-gray-700"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+          )}
+        </button>
       </div>
     </div>
   );
