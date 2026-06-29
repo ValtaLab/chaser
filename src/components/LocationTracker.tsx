@@ -106,6 +106,13 @@ export default function LocationTracker() {
     setIsFullscreen(prev => !prev);
   };
 
+  // ── Invalidate Leaflet size when fullscreen toggles ───────────────
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      requestAnimationFrame(() => mapInstanceRef.current.invalidateSize());
+    }
+  }, [isFullscreen]);
+
   // ── Update marker when location changes ───────────────────────────
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current || !currentLocation) return;
@@ -135,8 +142,8 @@ export default function LocationTracker() {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className={`bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 relative${isFullscreen ? ' fixed inset-0 z-50 rounded-none border-0 h-full' : ''}`}>
-      <div ref={containerRef} className={`relative bg-gray-100${isFullscreen ? ' h-full' : ' h-40'}`}>
+    <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 relative${isFullscreen ? ' fixed inset-0 z-50' : ' overflow-hidden'}`}>
+      <div ref={containerRef} className={`relative bg-gray-100${isFullscreen ? ' h-screen' : ' h-40 overflow-hidden'}`}>
         {/* Map */}
         <div ref={mapRef} className="w-full h-full" />
 
