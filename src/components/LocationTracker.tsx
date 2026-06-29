@@ -8,6 +8,7 @@ export default function LocationTracker() {
   const [error, setError] = useState<string | null>(null);
   const [hasFix, setHasFix] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstanceRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -101,16 +102,8 @@ export default function LocationTracker() {
     mapInstanceRef.current?.zoomOut();
   };
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const handleToggleFullscreen = async () => {
-    if (!containerRef.current) return;
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      setIsFullscreen(false);
-    } else {
-      await containerRef.current.requestFullscreen();
-      setIsFullscreen(true);
-    }
+  const handleToggleFullscreen = () => {
+    setIsFullscreen(prev => !prev);
   };
 
   // ── Update marker when location changes ───────────────────────────
@@ -134,7 +127,7 @@ export default function LocationTracker() {
         markerRef.current = L.marker([currentLocation.lat, currentLocation.lng], { icon }).addTo(map);
       }
 
-      map.setView([currentLocation.lat, currentLocation.lng], 15);
+      map.panTo([currentLocation.lat, currentLocation.lng], { animate: true, duration: 0.3 });
     };
 
     updateMarker();
@@ -142,8 +135,8 @@ export default function LocationTracker() {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 relative">
-      <div ref={containerRef} className="relative h-40 bg-gray-100">
+    <div className={`bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 relative${isFullscreen ? ' fixed inset-0 z-50 rounded-none border-0 h-full' : ''}`}>
+      <div ref={containerRef} className={`relative bg-gray-100${isFullscreen ? ' h-full' : ' h-40'}`}>
         {/* Map */}
         <div ref={mapRef} className="w-full h-full" />
 
