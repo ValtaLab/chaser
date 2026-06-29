@@ -2,16 +2,25 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-06-17T23:30:00+08:00
-last_version: icon-v1a-header-png
+last_deploy: 2026-06-29T10:50:00+08:00
+last_version: cleanup-dead-gps
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
 
-## 🚀 最新狀態 (2026-06-17)
-**版本:** `icon-v1a-header-png` | **部署時間:** ~23:30 HKT | **狀態:** 運行中  
+## 🚀 最新狀態 (2026-06-29)
+**版本:** `cleanup-dead-gps` | **部署時間:** ~10:50 HKT | **狀態:** 運行中  
 **部署地址:** https://master.chaser-6ta.pages.dev
+
+### 2026-06-29 | 清理 Dead GPS Code
+**版本:** cleanup-dead-gps
+1. **移除 `sendBeacon('/location')`** — `TrackingView.tsx` pagehide handler 原本送最後 GPS 到 Worker，但 DO `JourneyMonitor` 從不讀取，係 dead code
+2. **移除 debounced `/location` POST** — 每 10s POST GPS 到 Worker 嘅 useEffect 同樣無用
+3. **移除 `notifyLocation` function** — `chaser-auth` Worker 入面嘅 `/location` endpoint + route + publicPaths entry
+4. **清理 refs** — `locationDebounceRef`, `lastSentLocRef`, `liveLocationRef` 全部移除
+5. **不影響功能** — 後台 push 靠 DO ETA 輪詢，唔靠 GPS；前景 GPS 通知（≤500m + ETA ≤5min）不受影響
+6. **`handleCron` fallback** — `j.lastLocation` 永遠為 null，自動用 `estimatePos` 估算位置
 
 ### 核心功能
 - [x] **路線設定**: 巴士/MTR/小巴/電車
