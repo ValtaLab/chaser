@@ -102,32 +102,24 @@ export async function enrichSegmentWithCoords(segment: CommuteSegment): Promise<
 
   const enriched = { ...segment };
 
-  // Handle MTR segments with built-in coordinates
+  // Handle MTR segments — always refresh from calibrated table (stale/wrong coords common)
   if (segment.route.type === 'mtr') {
-    if (isZero(segment.fromStop.location)) {
-      const coords = getMTRStationCoords(segment.fromStop.id);
-      if (coords) {
-        enriched.fromStop = { ...enriched.fromStop, location: coords };
-      } else {
-        const station = segment.fromStop.nameZh || segment.fromStop.name;
-        const found = MTR_STATIONS.find(s => s.name_tc === station || s.stationCode === station);
-        if (found) {
-          enriched.fromStop = { ...enriched.fromStop, location: { lat: found.lat, lng: found.lng } };
-        }
-      }
-    }
-    if (isZero(segment.toStop.location)) {
-      const coords = getMTRStationCoords(segment.toStop.id);
-      if (coords) {
-        enriched.toStop = { ...enriched.toStop, location: coords };
-      } else {
-        const station = segment.toStop.nameZh || segment.toStop.name;
-        const found = MTR_STATIONS.find(s => s.name_tc === station || s.stationCode === station);
-        if (found) {
-          enriched.toStop = { ...enriched.toStop, location: { lat: found.lat, lng: found.lng } };
-        }
-      }
-    }
+    const line = segment.route.name;
+    const resolve = (id: string, nameZh: string, name: string) => {
+      const code = (id || '').toUpperCase();
+      const byLine = MTR_STATIONS.find(
+        s => s.line === line && (s.stationCode === code || s.name_tc === nameZh || s.name_tc === name || s.name_en === name)
+      );
+      if (byLine) return { lat: byLine.lat, lng: byLine.lng };
+      const byName = MTR_STATIONS.find(s => s.name_tc === nameZh || s.name_tc === name);
+      if (byName) return { lat: byName.lat, lng: byName.lng };
+      const byCode = getMTRStationCoords(id);
+      return byCode;
+    };
+    const from = resolve(segment.fromStop.id, segment.fromStop.nameZh, segment.fromStop.name);
+    if (from) enriched.fromStop = { ...enriched.fromStop, location: from };
+    const to = resolve(segment.toStop.id, segment.toStop.nameZh, segment.toStop.name);
+    if (to) enriched.toStop = { ...enriched.toStop, location: to };
     return enriched;
   }
 

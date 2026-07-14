@@ -14,7 +14,7 @@ import {
   findCitybusStopAnyDirection,
   getCitybusRouteInfo,
 } from '@/lib/bus-api';
-import { getMTRLineCoords, getLineStations, findStation, getMTRLineName } from '@/lib/mtr-api';
+import { getMTRLineCoords, getLineStations, findStation, getMTRLineName, getMTRPathStations } from '@/lib/mtr-api';
 
 // ─── MTR direction filter: is this train going towards our destination? ──
 function isSameMTRDirection(lineCode: string, fromStationCode: string, destStationCode: string, trainTerminal: string): boolean {
@@ -426,34 +426,31 @@ export default function TrackingView({
           addDebug(`  segment: ${seg.route.type} ${seg.route.name} (${seg.route.operator || 'unknown'})`);
 
           if (seg.route.type === 'mtr') {
-            // MTR: use station code lookup, draw line between stations
-            const stations = getLineStations(seg.route.name);
-            addDebug(`  MTR ${seg.route.name}: ${stations.length} stations`);
-            if (stations.length > 0) {
-              const fromStation = findStation(seg.fromStop.id) || findStation(seg.fromStop.nameZh || seg.fromStop.name);
-              const toStation = findStation(seg.toStop.id) || findStation(seg.toStop.nameZh || seg.toStop.name);
-              addDebug(`  from=${fromStation?.stationCode || '??'} to=${toStation?.stationCode || '??'}`);
-              
+            // MTR: line-scoped station path with calibrated coords (skip Racecourse spur)
+            const lineCode = seg.route.name;
+            const path = getMTRPathStations(
+              lineCode,
+              seg.fromStop.id || seg.fromStop.nameZh || seg.fromStop.name,
+              seg.toStop.id || seg.toStop.nameZh || seg.toStop.name,
+            );
+            addDebug(`  MTR ${lineCode}: path ${path.length} stations`);
+            if (path.length >= 2) {
+              stops = path.map(s => ({ lat: s.lat, lng: s.lng }));
+              addDebug(`  ✅ MTR: ${stops.map(s => `${s.lat.toFixed(4)},${s.lng.toFixed(4)}`).join(' → ').slice(0, 120)}`);
+            } else {
+              // Fallback: resolve each end on this line
+              const fromStation = findStation(seg.fromStop.id, lineCode) || findStation(seg.fromStop.nameZh || seg.fromStop.name, lineCode);
+              const toStation = findStation(seg.toStop.id, lineCode) || findStation(seg.toStop.nameZh || seg.toStop.name, lineCode);
               if (fromStation && toStation) {
-                const fromIdx = stations.findIndex(s => s.stationCode === fromStation.stationCode);
-                const toIdx = stations.findIndex(s => s.stationCode === toStation.stationCode);
-                addDebug(`  fromIdx=${fromIdx} toIdx=${toIdx}`);
-                
-                if (fromIdx !== -1 && toIdx !== -1) {
-                  const start = Math.min(fromIdx, toIdx);
-                  const end = Math.max(fromIdx, toIdx);
-                  const sliced = stations.slice(start, end + 1);
-                  stops = sliced.map(s => ({ lat: s.lat, lng: s.lng }));
-                  if (fromIdx > toIdx) stops.reverse();
-                  addDebug(`  ✅ MTR: ${stops.length} station points`);
-                } else {
-                  stops = [seg.fromStop.location, seg.toStop.location];
-                }
+                stops = [
+                  { lat: fromStation.lat, lng: fromStation.lng },
+                  { lat: toStation.lat, lng: toStation.lng },
+                ];
+                addDebug(`  ⚠️ MTR fallback 2-point: ${fromStation.stationCode}→${toStation.stationCode}`);
               } else {
                 stops = [seg.fromStop.location, seg.toStop.location];
+                addDebug(`  ⚠️ MTR using stored stop locations`);
               }
-            } else {
-              stops = [seg.fromStop.location, seg.toStop.location];
             }
           } else if (seg.route.operator === 'kmb') {
             // KMB: try both directions to find the one containing both stops

@@ -26,6 +26,13 @@ last_update_by: HermesBPi
 - Remove redundant title「趕車 Chaser」(iOS already shows from short_name)
 - SW cache v9
 
+
+### 2026-07-15 07:18 | MTR map route accuracy (EAL)
+- Root cause: wrong station coords (太和 ~1.9km off; 大埔墟/沙田/大學 similarly bad)
+- Calibrated EAL coords via OSM/Nominatim; 太和 error 1896m → 7m
+- getMTRPathStations(line-scoped) + skip Racecourse spur
+- Always refresh MTR stop coords on enrichment
+
 ## 🚀 最新狀態 (2026-06-29)
 **版本:** `cleanup-dead-gps` | **部署時間:** ~10:50 HKT | **狀態:** 運行中  
 **部署地址:** https://master.chaser-6ta.pages.dev

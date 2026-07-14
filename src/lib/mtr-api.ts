@@ -107,23 +107,23 @@ export const MTR_STATIONS: MTRStation[] = [
   { line: 'ISL', stationId: 'HFC', stationCode: 'HFC', name_tc: '杏花邨', name_en: 'Heng Fa Chuen', lat: 22.2771, lng: 114.2380 },
   { line: 'ISL', stationId: 'CHW', stationCode: 'CHW', name_tc: '柴灣', name_en: 'Chai Wan', lat: 22.2685, lng: 114.2335 },
   
-  // East Rail Line (EAL)
-  { line: 'EAL', stationId: 'ADM', stationCode: 'ADM', name_tc: '金鐘', name_en: 'Admiralty', lat: 22.2783, lng: 114.1647 },
-  { line: 'EAL', stationId: 'EXC', stationCode: 'EXC', name_tc: '會展', name_en: 'Exhibition Centre', lat: 22.2783, lng: 114.1745 },
-  { line: 'EAL', stationId: 'HUH', stationCode: 'HUH', name_tc: '紅磡', name_en: 'Hung Hom', lat: 22.3033, lng: 114.1815 },
-  { line: 'EAL', stationId: 'MKK', stationCode: 'MKK', name_tc: '旺角東', name_en: 'Mong Kok East', lat: 22.3230, lng: 114.1740 },
-  { line: 'EAL', stationId: 'KOT', stationCode: 'KOT', name_tc: '九龍塘', name_en: 'Kowloon Tong', lat: 22.3372, lng: 114.1760 },
-  { line: 'EAL', stationId: 'TAW', stationCode: 'TAW', name_tc: '大圍', name_en: 'Tai Wai', lat: 22.3430, lng: 114.1810 },
-  { line: 'EAL', stationId: 'SHT', stationCode: 'SHT', name_tc: '沙田', name_en: 'Sha Tin', lat: 22.3540, lng: 114.1850 },
-  { line: 'EAL', stationId: 'FOT', stationCode: 'FOT', name_tc: '火炭', name_en: 'Fo Tan', lat: 22.3905, lng: 114.1967 },
-  { line: 'EAL', stationId: 'RAC', stationCode: 'RAC', name_tc: '馬場', name_en: 'Racecourse', lat: 22.3993, lng: 114.2023 },
-  { line: 'EAL', stationId: 'UNI', stationCode: 'UNI', name_tc: '大學', name_en: 'University', lat: 22.4028, lng: 114.2085 },
-  { line: 'EAL', stationId: 'TAP', stationCode: 'TAP', name_tc: '大埔墟', name_en: 'Tai Po Market', lat: 22.4520, lng: 114.1680 },
-  { line: 'EAL', stationId: 'TWO', stationCode: 'TWO', name_tc: '太和', name_en: 'Tai Wo', lat: 22.4430, lng: 114.1770 },
-  { line: 'EAL', stationId: 'FAN', stationCode: 'FAN', name_tc: '粉嶺', name_en: 'Fanling', lat: 22.4910, lng: 114.1390 },
-  { line: 'EAL', stationId: 'SHS', stationCode: 'SHS', name_tc: '上水', name_en: 'Sheung Shui', lat: 22.5040, lng: 114.1290 },
-  { line: 'EAL', stationId: 'LOW', stationCode: 'LOW', name_tc: '羅湖', name_en: 'Lo Wu', lat: 22.5280, lng: 114.1150 },
-  { line: 'EAL', stationId: 'LMC', stationCode: 'LMC', name_tc: '落馬洲', name_en: 'Lok Ma Chau', lat: 22.5140, lng: 114.0640 },
+  // East Rail Line (EAL) — coords calibrated 2026-07-15 (OSM/Nominatim)
+  { line: 'EAL', stationId: 'ADM', stationCode: 'ADM', name_tc: '金鐘', name_en: 'Admiralty', lat: 22.2787, lng: 114.1642 },
+  { line: 'EAL', stationId: 'EXC', stationCode: 'EXC', name_tc: '會展', name_en: 'Exhibition Centre', lat: 22.2816, lng: 114.1757 },
+  { line: 'EAL', stationId: 'HUH', stationCode: 'HUH', name_tc: '紅磡', name_en: 'Hung Hom', lat: 22.3029, lng: 114.1822 },
+  { line: 'EAL', stationId: 'MKK', stationCode: 'MKK', name_tc: '旺角東', name_en: 'Mong Kok East', lat: 22.3223, lng: 114.1721 },
+  { line: 'EAL', stationId: 'KOT', stationCode: 'KOT', name_tc: '九龍塘', name_en: 'Kowloon Tong', lat: 22.3370, lng: 114.1759 },
+  { line: 'EAL', stationId: 'TAW', stationCode: 'TAW', name_tc: '大圍', name_en: 'Tai Wai', lat: 22.3727, lng: 114.1799 },
+  { line: 'EAL', stationId: 'SHT', stationCode: 'SHT', name_tc: '沙田', name_en: 'Sha Tin', lat: 22.3834, lng: 114.1881 },
+  { line: 'EAL', stationId: 'FOT', stationCode: 'FOT', name_tc: '火炭', name_en: 'Fo Tan', lat: 22.3952, lng: 114.1979 },
+  { line: 'EAL', stationId: 'RAC', stationCode: 'RAC', name_tc: '馬場', name_en: 'Racecourse', lat: 22.4005, lng: 114.2029 },
+  { line: 'EAL', stationId: 'UNI', stationCode: 'UNI', name_tc: '大學', name_en: 'University', lat: 22.4136, lng: 114.2101 },
+  { line: 'EAL', stationId: 'TAP', stationCode: 'TAP', name_tc: '大埔墟', name_en: 'Tai Po Market', lat: 22.4443, lng: 114.1706 },
+  { line: 'EAL', stationId: 'TWO', stationCode: 'TWO', name_tc: '太和', name_en: 'Tai Wo', lat: 22.4511, lng: 114.1607 },
+  { line: 'EAL', stationId: 'FAN', stationCode: 'FAN', name_tc: '粉嶺', name_en: 'Fanling', lat: 22.4907, lng: 114.1393 },
+  { line: 'EAL', stationId: 'SHS', stationCode: 'SHS', name_tc: '上水', name_en: 'Sheung Shui', lat: 22.5012, lng: 114.1280 },
+  { line: 'EAL', stationId: 'LOW', stationCode: 'LOW', name_tc: '羅湖', name_en: 'Lo Wu', lat: 22.5282, lng: 114.1133 },
+  { line: 'EAL', stationId: 'LMC', stationCode: 'LMC', name_tc: '落馬洲', name_en: 'Lok Ma Chau', lat: 22.5146, lng: 114.0662 },
   
   // Tuen Ma Line (TML)
   { line: 'TML', stationId: 'TUM', stationCode: 'TUM', name_tc: '屯門', name_en: 'Tuen Mun', lat: 22.3917, lng: 114.0181 },
@@ -144,7 +144,7 @@ export const MTR_STATIONS: MTRStation[] = [
   { line: 'TML', stationId: 'KAT', stationCode: 'KAT', name_tc: '啟德', name_en: 'Kai Tak', lat: 22.3295, lng: 114.1995 },
   { line: 'TML', stationId: 'DIH', stationCode: 'DIH', name_tc: '鑽石山', name_en: 'Diamond Hill', lat: 22.3400, lng: 114.2010 },
   { line: 'TML', stationId: 'HIK', stationCode: 'HIK', name_tc: '顯徑', name_en: 'Hin Keng', lat: 22.3490, lng: 114.1920 },
-  { line: 'TML', stationId: 'TAW', stationCode: 'TAW', name_tc: '大圍', name_en: 'Tai Wai', lat: 22.3430, lng: 114.1810 },
+  { line: 'TML', stationId: 'TAW', stationCode: 'TAW', name_tc: '大圍', name_en: 'Tai Wai', lat: 22.3727, lng: 114.1799 },
   { line: 'TML', stationId: 'CKT', stationCode: 'CKT', name_tc: '車公廟', name_en: 'Che Kung Temple', lat: 22.3540, lng: 114.1755 },
   { line: 'TML', stationId: 'SHA', stationCode: 'SHA', name_tc: '沙田圍', name_en: 'Sha Tin', lat: 22.3580, lng: 114.1670 },
   { line: 'TML', stationId: 'CIO', stationCode: 'CIO', name_tc: '第一城', name_en: 'City One', lat: 22.3810, lng: 114.2040 },
@@ -242,13 +242,50 @@ export function getMTRLineCoords(lineCode: string): { lat: number; lng: number }
 
 // ============ Station Lookup ============
 
-export function findStation(nameOrCode: string): MTRStation | undefined {
+export function findStation(nameOrCode: string, lineCode?: string): MTRStation | undefined {
   const q = nameOrCode.toLowerCase();
-  return MTR_STATIONS.find(
-    s => s.stationCode.toLowerCase() === q ||
-         s.name_tc === nameOrCode ||
-         s.name_en.toLowerCase() === q
+  const pool = lineCode
+    ? MTR_STATIONS.filter(s => s.line === lineCode)
+    : MTR_STATIONS;
+  // Prefer exact code match within line first (avoids SHT=西營盤 vs 沙田 collision)
+  return (
+    pool.find(s => s.stationCode.toLowerCase() === q) ||
+    pool.find(s => s.name_tc === nameOrCode) ||
+    pool.find(s => s.name_en.toLowerCase() === q) ||
+    // Fallback: global search if line-scoped miss
+    (lineCode
+      ? MTR_STATIONS.find(
+          s => s.stationCode.toLowerCase() === q ||
+               s.name_tc === nameOrCode ||
+               s.name_en.toLowerCase() === q
+        )
+      : undefined)
   );
+}
+
+/** Find station index on a line, skipping Racecourse spur unless it is an endpoint */
+export function getMTRPathStations(
+  lineCode: string,
+  fromCodeOrName: string,
+  toCodeOrName: string,
+): MTRStation[] {
+  const stations = getLineStations(lineCode);
+  if (!stations.length) return [];
+  const from = findStation(fromCodeOrName, lineCode);
+  const to = findStation(toCodeOrName, lineCode);
+  if (!from || !to) return [];
+  const fromIdx = stations.findIndex(s => s.stationCode === from.stationCode);
+  const toIdx = stations.findIndex(s => s.stationCode === to.stationCode);
+  if (fromIdx === -1 || toIdx === -1) return [];
+  const start = Math.min(fromIdx, toIdx);
+  const end = Math.max(fromIdx, toIdx);
+  let sliced = stations.slice(start, end + 1);
+  // Drop Racecourse spur when neither endpoint is RAC (keeps polyline on main EAL)
+  if (from.stationCode !== 'RAC' && to.stationCode !== 'RAC') {
+    sliced = sliced.filter(s => s.stationCode !== 'RAC');
+  }
+  if (fromIdx > toIdx) sliced = [...sliced].reverse();
+  return sliced;
 }
 
 export function getLineStations(lineCode: string): MTRStation[] {
