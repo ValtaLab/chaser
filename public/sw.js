@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = "chaser-v8";
-const SW_VERSION = "5.1.0";
+const CACHE_NAME = "chaser-v9";
+const SW_VERSION = "5.2.0";
 const WORKER_URL = "https://chaser-auth.isearover.workers.dev";
 const STATIC_ASSETS = [
   "/",
@@ -104,8 +104,8 @@ self.addEventListener("push", (event) => {
     try {
       const data = event.data.json();
       event.waitUntil(
-        self.registration.showNotification(data.title || "趕車 Chaser", {
-          body: data.body || "你嘅車快到站啦！",
+        self.registration.showNotification(data.title || "到站提醒", {
+          body: data.body || "",
           icon: "/icon-192-v2.png",
           badge: "/icon-192-v2.png",
           data: { url: data.url || "/" },
@@ -127,7 +127,7 @@ self.addEventListener("push", (event) => {
         return res.json();
       })
       .then((data) => {
-        return self.registration.showNotification(data.title || "趕車", {
+        return self.registration.showNotification(data.title || "到站提醒", {
           body: data.body || "",
           icon: "/icon-192-v2.png",
           badge: "/icon-192-v2.png",

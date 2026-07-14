@@ -20,6 +20,12 @@ last_update_by: HermesBPi
 6. Re-subscribe push after permission grant
 7. /push-test endpoint; journey start sends confirmation push
 
+
+### 2026-07-15 07:08 | Push title format
+- Title = actionable content (預計站名 / 轉乘…)
+- Remove redundant title「趕車 Chaser」(iOS already shows from short_name)
+- SW cache v9
+
 ## 🚀 最新狀態 (2026-06-29)
 **版本:** `cleanup-dead-gps` | **部署時間:** ~10:50 HKT | **狀態:** 運行中  
 **部署地址:** https://master.chaser-6ta.pages.dev
