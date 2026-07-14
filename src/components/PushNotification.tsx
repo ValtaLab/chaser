@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { subscribePush } from "./ServiceWorker注册";
 
 const STORAGE_KEY = "chaser-notifications-enabled";
 
@@ -38,6 +39,8 @@ export default function PushNotification() {
         if (result === "granted") {
           setEnabled(true);
           localStorage.setItem(STORAGE_KEY, "true");
+          // Critical: permission alone does not create Web Push subscription
+          try { await subscribePush(); } catch (e) { console.error('[Push] resubscribe', e); }
         }
       }
     } catch (e) {

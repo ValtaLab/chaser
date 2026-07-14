@@ -884,25 +884,40 @@ export default function TrackingView({
   //     causing lock screen spam. See commit for full original code.
   // }, [liveLocation, route.segments, enrichmentDone]);
 
-  // ── Push notification network: journey start + end ──
+  // ── Push notification network: journey start (DO background monitor) ──
+  // IMPORTANT: do NOT call /journey/end on unmount — leaving the screen / app
+  // background must keep the DO alive. End only via 結束旅程 button.
   const WORKER_URL = 'https://chaser-auth.isearover.workers.dev';
 
-  // Journey start: POST route segments + push sub + auth to worker → activates DO
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      // Get push subscription from SW
+      // Ensure Web Push subscription exists (permission may have been granted later)
       let pushSub: PushSubscriptionJSON | null = null;
       try {
         if ('serviceWorker' in navigator) {
           const reg = await navigator.serviceWorker.ready;
-          const sub = await reg.pushManager.getSubscription();
+          let sub = await reg.pushManager.getSubscription();
+          if (!sub && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            try {
+              const { subscribePush } = await import('./ServiceWorker注册');
+              await subscribePush(reg);
+              sub = await reg.pushManager.getSubscription();
+            } catch (e) {
+              addDebug(`🔔 resubscribe fail: ${e}`);
+            }
+          }
           if (sub) pushSub = sub.toJSON();
         }
-      } catch {}
+      } catch (e) {
+        addDebug(`🔔 pushSub err: ${e}`);
+      }
 
-      // Get JWT token
+      if (!pushSub) {
+        addDebug('🔔 no pushSub — background push disabled (enable 通知 + install PWA)');
+      }
+
       let token: string | null = null;
       try {
         const stored = localStorage.getItem('chaser_auth');
@@ -920,27 +935,43 @@ export default function TrackingView({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
-      fetch(`${WORKER_URL}/journey/start`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          segments: segs,
-          ...(pushSub ? { pushSub } : {}),
-        }),
-      }).catch(() => {});
+      try {
+        const res = await fetch(`${WORKER_URL}/journey/start`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            segments: segs,
+            sendTest: true,
+            ...(pushSub ? { pushSub } : {}),
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok) {
+          addDebug(`🔔 journey DO started: ${JSON.stringify(data).slice(0, 120)}`);
+        } else {
+          addDebug(`🔔 journey start FAIL ${res.status}: ${JSON.stringify(data).slice(0, 120)}`);
+        }
+      } catch (e) {
+        if (!cancelled) addDebug(`🔔 journey start network err: ${e}`);
+      }
     })();
 
     return () => {
       cancelled = true;
-      // Journey end: cleanup on unmount
-      const endHeaders: Record<string, string> = {};
-      try {
-        const stored = localStorage.getItem('chaser_auth');
-        if (stored) endHeaders['Authorization'] = `Bearer ${JSON.parse(stored).token}`;
-      } catch {}
-      fetch(`${WORKER_URL}/journey/end`, { method: 'POST', headers: endHeaders }).catch(() => {});
+      // Keep DO running in background — explicit end only
     };
   }, [route.segments]);
+
+  // Explicit journey end helper used by 結束旅程
+  const endBackgroundJourney = useCallback(() => {
+    const endHeaders: Record<string, string> = {};
+    try {
+      const stored = localStorage.getItem('chaser_auth');
+      if (stored) endHeaders['Authorization'] = `Bearer ${JSON.parse(stored).token}`;
+    } catch {}
+    fetch(`${WORKER_URL}/journey/end`, { method: 'POST', headers: endHeaders }).catch(() => {});
+  }, []);
 
   // ── ETA urgency helpers ─────────────────────────────────────────
   const getEtaColor = (min: number) => {
@@ -1213,7 +1244,7 @@ export default function TrackingView({
               <p className="text-sm text-white truncate">{routeSummary}</p>
             </div>
             <button
-              onClick={onEndJourney}
+              onClick={() => { endBackgroundJourney(); onEndJourney(); }}
               className="shrink-0 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-colors shadow-lg shadow-red-600/30"
             >
               結束旅程

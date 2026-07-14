@@ -13,7 +13,12 @@ const WORKER_URL = 'https://chaser-auth.isearover.workers.dev';
 const VAPID_PUBLIC_KEY = 'BAjzSqYCsNCmz4VWRi0xUfH5GIYsWGUQsWg5WOGhJH31cv1up65gxn0et2WA0PYmTECYlZp6rVY5GKYRJ2KbPyo';
 
 /** Subscribe to push notifications and send subscription to worker */
-async function subscribePush(registration: ServiceWorkerRegistration) {
+export async function subscribePush(registration?: ServiceWorkerRegistration) {
+  if (!registration) {
+    if (!('serviceWorker' in navigator)) return false;
+    registration = await navigator.serviceWorker.ready;
+  }
+
   try {
     const existing = await registration.pushManager.getSubscription();
     if (existing) {
@@ -23,7 +28,7 @@ async function subscribePush(registration: ServiceWorkerRegistration) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ subscription: existing.toJSON() }),
       });
-      if (ok.ok) return;
+      if (ok.ok) return true;
       // If subscribe endpoint fails (e.g. subscription expired), unsubscribe and re-subscribe
       await existing.unsubscribe();
     }
@@ -47,9 +52,11 @@ async function subscribePush(registration: ServiceWorkerRegistration) {
     });
 
     console.log('[Push] Subscribed successfully');
+    return true;
   } catch (err) {
     // iOS 16.4+ PWA supports push, but older iOS or non-PWA may not
     console.log('[Push] Subscription not available:', err);
+    return false;
   }
 }
 

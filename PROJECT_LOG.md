@@ -9,6 +9,17 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+
+### 2026-07-15 00:34 | Background push fix (A-scheme)
+**Versions:** chaser-auth c95abc7d · PWA push-fix-20260715
+1. DO empty Web Push + pending_notif (unencrypted JSON body rejected by FCM/APNs)
+2. ECDSA sig: use raw 64-byte if already P1363
+3. DO classic fetch entry /start /stop /status /test-push
+4. Guest journey without login (endpoint-hash DO id)
+5. TrackingView: do NOT /journey/end on unmount; only 結束旅程
+6. Re-subscribe push after permission grant
+7. /push-test endpoint; journey start sends confirmation push
+
 ## 🚀 最新狀態 (2026-06-29)
 **版本:** `cleanup-dead-gps` | **部署時間:** ~10:50 HKT | **狀態:** 運行中  
 **部署地址:** https://master.chaser-6ta.pages.dev
