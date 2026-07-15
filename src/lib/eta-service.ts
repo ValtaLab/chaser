@@ -170,6 +170,14 @@ const isZeroLocation = (loc: Location): boolean =>
 export async function calculateTotalJourney(
   route: CommuteRoute,
   currentLocation: Location,
+  mid?: {
+    /** First segment index still active (skip earlier) */
+    segmentIndex: number;
+    /** 0–1 remaining of current ride (1 = full) */
+    remainingFraction: number;
+    /** User already on vehicle for segmentIndex — skip walk-to-board */
+    alreadyOnBoard: boolean;
+  } | null,
 ): Promise<SmartRouteRecommendation> {
   // Enrich all segments with real stop coordinates before calculating times
   // This fixes the case where bus stops were saved with {lat: 0, lng: 0}
@@ -183,15 +191,22 @@ export async function calculateTotalJourney(
   let canMakeIt = true;
   let minConfidence: 'high' | 'medium' | 'low' = 'high';
 
-  for (let i = 0; i < enrichedSegments.length; i++) {
+  const startIdx = mid?.segmentIndex ?? 0;
+  const remainingFrac = mid?.remainingFraction ?? 1;
+  const skipWalkBoard = !!mid?.alreadyOnBoard;
+
+  for (let i = startIdx; i < enrichedSegments.length; i++) {
     const seg = enrichedSegments[i];
-    const isFirst = i === 0;
+    const isFirstActive = i === startIdx;
     const prevSeg = i > 0 ? enrichedSegments[i - 1] : null;
 
     // 1. Walk to boarding stop (or walk between transfer stops)
     let walkMinutes = 0;
 
-    if (isFirst) {
+    if (isFirstActive && skipWalkBoard) {
+      // Already on vehicle — no walk back to boarding stop
+      walkMinutes = 0;
+    } else if (isFirstActive) {
       // Walk from current location to first boarding stop
       if (!isZeroLocation(seg.fromStop.location)) {
         const stopLat = Number(seg.fromStop.location.lat).toFixed(5);
@@ -220,13 +235,15 @@ export async function calculateTotalJourney(
           minConfidence = 'low';
         }
       }
-      segments.push({
-        type: 'walk',
-        minutes: walkMinutes,
-        description: `步行至 ${seg.fromStop.nameZh} (${Number(seg.fromStop.location.lat).toFixed(4)},${Number(seg.fromStop.location.lng).toFixed(4)})`,
-        fromLocation: currentLocation,
-        toLocation: seg.fromStop.location,
-      });
+      if (walkMinutes > 0) {
+        segments.push({
+          type: 'walk',
+          minutes: walkMinutes,
+          description: `步行至 ${seg.fromStop.nameZh} (${Number(seg.fromStop.location.lat).toFixed(4)},${Number(seg.fromStop.location.lng).toFixed(4)})`,
+          fromLocation: currentLocation,
+          toLocation: seg.fromStop.location,
+        });
+      }
     } else if (prevSeg) {
       // Walk from previous alighting stop to this boarding stop (transfer)
       if (!isZeroLocation(prevSeg.toStop.location) && !isZeroLocation(seg.fromStop.location)) {
@@ -283,10 +300,19 @@ export async function calculateTotalJourney(
       rideMinutes = 8;
     }
 
+    // Mid-journey: only remaining portion of current segment
+    if (isFirstActive && skipWalkBoard && remainingFrac < 1) {
+      rideMinutes = Math.max(2, Math.ceil(rideMinutes * remainingFrac));
+    }
+
+    const rideLabel = isFirstActive && skipWalkBoard
+      ? `乘搭 ${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}（途中）`
+      : `乘搭 ${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}`;
+
     segments.push({
       type: 'ride',
       minutes: rideMinutes,
-      description: `乘搭 ${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}`,
+      description: rideLabel,
     });
     totalMinutes += rideMinutes;
   }

@@ -10,6 +10,30 @@ last_update_by: HermesBPi
 # 趕車 (Chaser) — 項目進展日誌
 
 
+### 2026-07-15 | Mid-journey auto skip boarding
+**App + Worker** `mid-journey-20260715`
+1. GPS 對 polyline：離線 <150m + 已過上車站 → 判定途中
+2. 時間軸：唔再步行返上車站；車程用剩餘比例
+3. DO start 收 `alreadyOnBoard`：該程 onBoard、前程 completed、rideTime 縮短
+
+
+
+### 2026-07-15 | 未到轉車站就推 72X 準備上車
+**Worker:** chaser-auth `seg-gate-20260715`
+1. Root cause: 全部 segment 一開始都係 `waiting`；seg0 上車後仍處理 seg1 approach（大埔 72X ETA≤3′）
+2. Fix: 只有第一程 `waiting`，其後 `pending`；`earlierNotDone` gate；onBoard 後 break 唔處理下程
+3. 要等前程 `completed` 先 promote 下程 waiting + 推轉乘/準備上車
+
+
+
+### 2026-07-15 | False「已上車」push fix
+**Worker:** chaser-auth `board-detect-20260715` · DO JourneyMonitor
+1. Root cause: boarding if ETA≤5 and any change → countdown 5′→4′ 誤判上車
+2. New rule: only when prev first ≤2′ AND (jump +3 or matches prev second bus)
+3. Unit cases: countdown no-board; [2,8]→[8,15] board
+
+
+
 ### 2026-07-15 | 巴士站氣泡唔顯示
 **版本:** bus-map-bubbles
 1. Root cause: MapView 用 `route.segments`（巴士 coords 多數 0,0）；enrich 結果只入 ref → 唔 re-render

@@ -37,6 +37,7 @@ function isSameMTRDirection(lineCode: string, fromStationCode: string, destStati
 }
 import { snapToRoads, haversineMeters } from '@/lib/road-snap';
 import { enrichSegmentWithCoords } from '@/lib/stop-coords';
+import { detectMidJourney, type MidJourneyState } from '@/lib/journey-progress';
 import SmartJourneyTimeline from './SmartJourneyTimeline';
 import AlternativeRouteCard from './AlternativeRouteCard';
 import type { CommuteRoute, CommuteSegment, Location, SmartSegment, SmartRouteRecommendation } from '@/types';
@@ -217,6 +218,14 @@ export default function TrackingView({
   // Cache: Set of route names that Citybus also serves (joint-operated routes like 307P)
   const citybusRouteCacheRef = useRef<Set<string>>(new Set());
   const [enrichmentDone, setEnrichmentDone] = useState(false);
+  /** GPS already mid-route when journey starts — skip boarding for that segment */
+  const [midJourney, setMidJourney] = useState<MidJourneyState | null>(null);
+  const midJourneySentRef = useRef(false);
+  // Reset DO start guard when route changes
+  useEffect(() => {
+    midJourneySentRef.current = false;
+    setMidJourney(null);
+  }, [route.id]);
   const addDebug = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
     const line = `${ts} ${msg}`;
@@ -403,7 +412,7 @@ export default function TrackingView({
   // Initialize journeyEstimate with basic estimate
   const [journeyEstimate, setJourneyEstimate] = useState<SmartRouteRecommendation | null>(basicEstimate);
 
-  // Then: refine with GPS and real walk/ride calculations
+  // Then: refine with GPS and real walk/ride calculations (+ mid-journey skip)
   useEffect(() => {
     const timer = setTimeout(async () => {
       const defaultLoc = { lat: 22.3193, lng: 114.1694 };
@@ -411,8 +420,33 @@ export default function TrackingView({
         || enrichedSegmentsRef.current?.[0]?.fromStop.location
         || defaultLoc;
       try {
+        // Detect already on vehicle from GPS vs polylines
+        let mid: MidJourneyState | null = null;
+        if (liveLocation && routePolylines.length > 0) {
+          mid = detectMidJourney(liveLocation, routePolylines);
+          if (mid?.alreadyOnBoard) {
+            setMidJourney(mid);
+            addDebug(
+              `🚌 mid-journey: seg${mid.segmentIndex} ${(mid.fraction * 100).toFixed(0)}% ` +
+              `remain=${(mid.remainingFraction * 100).toFixed(0)}% off=${Math.round(mid.distToPolylineM)}m`,
+            );
+          } else if (mid) {
+            setMidJourney(null);
+          }
+        }
+
         addDebug(`📍 ${liveLocation ? 'GPS' : (enrichedSegmentsRef.current?.[0]?.fromStop.location ? '車站' : '預設')}: (${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)})`);
-        const result = await calculateTotalJourney(route, loc);
+        const result = await calculateTotalJourney(
+          route,
+          loc,
+          mid?.alreadyOnBoard
+            ? {
+                segmentIndex: mid.segmentIndex,
+                remainingFraction: mid.remainingFraction,
+                alreadyOnBoard: true,
+              }
+            : null,
+        );
         setJourneyEstimate(result);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -423,7 +457,7 @@ export default function TrackingView({
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [route, liveLocation, enrichmentDone]);
+  }, [route, liveLocation, enrichmentDone, routePolylines]);
 
   // ── Fetch full route stop sequences for all segments ─────────────
   useEffect(() => {
@@ -901,8 +935,12 @@ export default function TrackingView({
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    (async () => {
+    const startDo = async (mid: MidJourneyState | null) => {
+      if (midJourneySentRef.current || cancelled) return;
+      midJourneySentRef.current = true;
+
       // Ensure Web Push subscription exists (permission may have been granted later)
       let pushSub: PushSubscriptionJSON | null = null;
       try {
@@ -945,33 +983,79 @@ export default function TrackingView({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
+      const body: Record<string, unknown> = {
+        segments: segs,
+        sendTest: true,
+        ...(pushSub ? { pushSub } : {}),
+      };
+
+      // Mid-journey: skip boarding for active segment, mark prior complete
+      if (mid?.alreadyOnBoard) {
+        body.alreadyOnBoard = {
+          segmentIndex: mid.segmentIndex,
+          remainingFraction: mid.remainingFraction,
+          completedBefore: mid.completedBefore,
+        };
+        addDebug(
+          `🔔 DO start mid-journey seg${mid.segmentIndex} remain=${(mid.remainingFraction * 100).toFixed(0)}%`,
+        );
+      }
+
       try {
         const res = await fetch(`${WORKER_URL}/journey/start`, {
           method: 'POST',
           headers,
-          body: JSON.stringify({
-            segments: segs,
-            sendTest: true,
-            ...(pushSub ? { pushSub } : {}),
-          }),
+          body: JSON.stringify(body),
         });
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (res.ok) {
-          addDebug(`🔔 journey DO started: ${JSON.stringify(data).slice(0, 120)}`);
+          addDebug(`🔔 journey DO started: ${JSON.stringify(data).slice(0, 140)}`);
         } else {
           addDebug(`🔔 journey start FAIL ${res.status}: ${JSON.stringify(data).slice(0, 120)}`);
+          midJourneySentRef.current = false; // allow retry
         }
       } catch (e) {
-        if (!cancelled) addDebug(`🔔 journey start network err: ${e}`);
+        if (!cancelled) {
+          addDebug(`🔔 journey start network err: ${e}`);
+          midJourneySentRef.current = false;
+        }
       }
-    })();
+    };
+
+    // Prefer: wait until we have polylines + GPS to detect mid-journey.
+    // Fallback: start after 6s even without (don't block background monitor forever).
+    const tryStart = () => {
+      if (midJourneySentRef.current || cancelled) return;
+      const hasPoly = routePolylines.length > 0;
+      const hasGps = !!liveLocation;
+      if (hasPoly && hasGps) {
+        const mid = detectMidJourney(liveLocation!, routePolylines);
+        if (mid?.alreadyOnBoard) setMidJourney(mid);
+        void startDo(mid?.alreadyOnBoard ? mid : null);
+        return;
+      }
+    };
+
+    tryStart();
+    // Retry when deps update; also hard timeout
+    timer = setTimeout(() => {
+      if (!midJourneySentRef.current && !cancelled) {
+        const mid =
+          liveLocation && routePolylines.length > 0
+            ? detectMidJourney(liveLocation, routePolylines)
+            : null;
+        if (mid?.alreadyOnBoard) setMidJourney(mid);
+        void startDo(mid?.alreadyOnBoard ? mid : null);
+      }
+    }, 6000);
 
     return () => {
       cancelled = true;
+      if (timer) clearTimeout(timer);
       // Keep DO running in background — explicit end only
     };
-  }, [route.segments]);
+  }, [route.segments, routePolylines, liveLocation]);
 
   // Explicit journey end helper used by 結束旅程
   const endBackgroundJourney = useCallback(() => {
