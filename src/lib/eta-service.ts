@@ -1,11 +1,109 @@
 // Combined ETA service — merges bus + MTR + GMB + tram data
-import { getStopETA, getKMBStopInfo, getCitybusStopInfo, type StopETA } from './bus-api';
+import { getStopETA, getKMBStopInfo, getCitybusStopInfo, getKMBRouteStops, getCitybusRouteStops, type StopETA } from './bus-api';
 import { getMTRETA, type MTRETA, findStation, getMTRLineName } from './mtr-api';
 import { getGMBStopETASummary, type GMBStopETAInfo } from './gmb-api';
 import { getEstimatedTramTime } from './tram-api';
 import { walkTimeBetween, haversineMeters } from './road-snap';
 import { enrichSegmentWithCoords } from './stop-coords';
 import type { CommuteRoute, CommuteSegment, Location, SmartRouteRecommendation, SmartSegment } from '@/types';
+
+// ── Bus ride time ────────────────────────────────────────────────────
+// Old formula: haversine / 0.3 km/min (18 km/h), min 5′ — too optimistic for HK
+// (e.g. 大埔中心→富蝶 ~1km straight → 5′; real ~10–15′ with stops/lights).
+
+/** Count stop intervals between two stop IDs on a route-stop list. */
+function stopIntervalsBetween(
+  stops: { stop: string; seq: number }[],
+  fromId: string,
+  toId: string,
+): number | null {
+  if (!stops.length || !fromId || !toId) return null;
+  const from = stops.find(s => s.stop === fromId || s.stop.toUpperCase() === fromId.toUpperCase());
+  const to = stops.find(s => s.stop === toId || s.stop.toUpperCase() === toId.toUpperCase());
+  if (!from || !to) return null;
+  const n = Math.abs(to.seq - from.seq);
+  return n > 0 ? n : null;
+}
+
+/**
+ * Estimate bus ride minutes between two stops.
+ * Prefers stop-count (real route hops); falls back to road-adjusted haversine.
+ */
+export async function estimateBusRideMinutes(seg: {
+  route: { name: string; operator?: string; stops?: { id: string }[] };
+  fromStop: { id: string; location: Location };
+  toStop: { id: string; location: Location };
+}): Promise<number> {
+  let intervals: number | null = null;
+
+  // 1) Saved route.stops if present
+  const routeStops = seg.route.stops;
+  if (routeStops?.length) {
+    const fi = routeStops.findIndex(s => s.id === seg.fromStop.id);
+    const ti = routeStops.findIndex(s => s.id === seg.toStop.id);
+    if (fi >= 0 && ti >= 0 && fi !== ti) intervals = Math.abs(ti - fi);
+  }
+
+  // 2) Live KMB / Citybus route-stop API (both directions)
+  if (intervals == null) {
+    const isCtb = seg.route.operator === 'citybus';
+    try {
+      for (const dir of ['O', 'I'] as const) {
+        const list = isCtb
+          ? await getCitybusRouteStops(seg.route.name, dir)
+          : await getKMBRouteStops(seg.route.name, dir);
+        const n = stopIntervalsBetween(list, seg.fromStop.id, seg.toStop.id);
+        if (n != null) {
+          intervals = n;
+          break;
+        }
+      }
+      // Joint-operated: try the other operator if first failed
+      if (intervals == null) {
+        for (const dir of ['O', 'I'] as const) {
+          const list = isCtb
+            ? await getKMBRouteStops(seg.route.name, dir)
+            : await getCitybusRouteStops(seg.route.name, dir);
+          const n = stopIntervalsBetween(list, seg.fromStop.id, seg.toStop.id);
+          if (n != null) {
+            intervals = n;
+            break;
+          }
+        }
+      }
+    } catch {
+      /* ignore — fall back to distance */
+    }
+  }
+
+  // Distance-based estimate: road factor × slow effective speed (lights + dwell)
+  // ~10–12 km/h network speed after 1.7× detour on straight-line
+  let distMinutes = 12; // default when coords missing
+  if (!isZeroLocation(seg.fromStop.location) && !isZeroLocation(seg.toStop.location)) {
+    const distKm = haversineMeters(seg.fromStop.location, seg.toStop.location) / 1000;
+    const roadKm = distKm * 1.7;
+    distMinutes = Math.ceil(roadKm / 0.18); // 0.18 km/min ≈ 11 km/h
+  }
+
+  // Stop-hop estimate: ~2.5 min per interval (move + dwell), +2 min buffer
+  const stopMinutes =
+    intervals != null ? Math.ceil(intervals * 2.5 + 2) : null;
+
+  // Combine: take the more conservative (larger) of available methods; floor 8′
+  const candidates = [distMinutes];
+  if (stopMinutes != null) candidates.push(stopMinutes);
+  const ride = Math.max(8, ...candidates);
+
+  console.log(
+    `[Journey] Bus ride ${seg.route.name}: intervals=${intervals ?? '—'} ` +
+    `distMin=${distMinutes} stopMin=${stopMinutes ?? '—'} → ${ride}min`,
+  );
+  return ride;
+}
+
+function isZeroLocation(loc: Location): boolean {
+  return loc.lat === 0 && loc.lng === 0;
+}
 
 export interface TransportETA {
   type: 'bus' | 'mtr' | 'gmb' | 'tram';
@@ -161,10 +259,6 @@ function haversineKmBetween(a: Location, b: Location): number {
   return haversineMeters(a, b) / 1000;
 }
 
-// Helper: check if a location is invalid (default zero coordinates)
-const isZeroLocation = (loc: Location): boolean =>
-  loc.lat === 0 && loc.lng === 0;
-
 // Smart journey time estimation
 // Calculates total journey time = walk + wait + ride for each segment
 export async function calculateTotalJourney(
@@ -286,14 +380,10 @@ export async function calculateTotalJourney(
         }
       }
     } else if (seg.route.type === 'bus' || seg.route.operator === 'kmb' || seg.route.operator === 'citybus') {
-      // Bus: estimate from haversine distance, avg 18 km/h (0.3 km/min)
-      // Guard: if either stop has (0,0) coords, use a reasonable default
+      // Bus: stop-count + road-adjusted distance (see estimateBusRideMinutes)
+      rideMinutes = await estimateBusRideMinutes(seg);
       if (isZeroLocation(seg.fromStop.location) || isZeroLocation(seg.toStop.location)) {
-        rideMinutes = 30; // default bus ride estimate
         minConfidence = 'low';
-      } else {
-        const distKm = haversineKmBetween(seg.fromStop.location, seg.toStop.location);
-        rideMinutes = Math.max(5, Math.ceil(distKm / 0.3));
       }
     } else {
       // Minibus/tram/etc: default 8 min
@@ -302,7 +392,7 @@ export async function calculateTotalJourney(
 
     // Mid-journey: only remaining portion of current segment
     if (isFirstActive && skipWalkBoard && remainingFrac < 1) {
-      rideMinutes = Math.max(2, Math.ceil(rideMinutes * remainingFrac));
+      rideMinutes = Math.max(3, Math.ceil(rideMinutes * remainingFrac));
     }
 
     const rideLabel = isFirstActive && skipWalkBoard
