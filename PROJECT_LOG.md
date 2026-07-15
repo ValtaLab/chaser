@@ -2,12 +2,20 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-06-29T10:50:00+08:00
-last_version: cleanup-dead-gps
+last_deploy: 2026-07-15T12:00:00+08:00
+last_version: map-label-side-offset
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
+
+
+### 2026-07-15 | 地圖氣泡站名側移 + 精簡
+**版本:** map-label-side-offset · commit 8ca78e7
+1. 站名氣泡改側向（左右交替）+ 小箭咀指站點，唔再壓住路線
+2. 文字精簡：去 emoji／站碼括號／逗號後段，最多 7 字
+3. 同一座標只顯示一個氣泡（去重上落／轉車重疊）
+4. 轉車 Popup：`轉 站名 → 路線`
 
 
 ### 2026-07-15 00:34 | Background push fix (A-scheme)
