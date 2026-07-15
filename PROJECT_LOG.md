@@ -2,12 +2,20 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-07-15T12:00:00+08:00
-last_version: map-label-side-offset
+last_deploy: 2026-07-15T14:30:00+08:00
+last_version: map-label-crash-fix
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
+
+
+### 2026-07-15 | Tracking crash fix (map labels)
+**版本:** map-label-crash-fix
+1. Root cause: incomplete stop coords (`lat` undefined) → `toFixed` throw; transfer `toStop` optional crash during render
+2. Harden MapLabels: typeof+isFinite coord guard, HTML escape, try/catch, single-line divIcon HTML
+3. Harden transferMarkers optional chaining
+4. SW cache chaser-v9 → **v10** (force iOS PWA refresh)
 
 
 ### 2026-07-15 | 地圖氣泡站名側移 + 精簡

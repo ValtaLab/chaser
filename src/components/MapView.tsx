@@ -48,6 +48,23 @@ function shortStopLabel(raw: string | undefined | null): string {
   return s;
 }
 
+function isValidLatLng(loc: Location | undefined | null): loc is Location {
+  return !!loc
+    && typeof loc.lat === 'number' && typeof loc.lng === 'number'
+    && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)
+    && !(loc.lat === 0 && loc.lng === 0);
+}
+
+/** Escape text before injecting into Leaflet divIcon HTML. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function MapLabels({ segments }: MapLabelsProps) {
   const map = useMap();
   const markersRef = useRef<L.Marker[]>([]);
@@ -65,89 +82,84 @@ function MapLabels({ segments }: MapLabelsProps) {
     }
 
     const init = () => {
-      markersRef.current.forEach(m => m.remove());
-      markersRef.current = [];
+      try {
+        markersRef.current.forEach(m => m.remove());
+        markersRef.current = [];
 
-      const newMarkers: L.Marker[] = [];
-      const seen = new Set<string>();
-      const coordKey = (lat: number, lng: number) =>
-        `${lat.toFixed(5)},${lng.toFixed(5)}`;
+        const newMarkers: L.Marker[] = [];
+        const seen = new Set<string>();
 
-      type Side = 'left' | 'right';
-      const labels: Array<{ lat: number; lng: number; text: string; side: Side }> = [];
+        type Side = 'left' | 'right';
+        const labels: Array<{ lat: number; lng: number; text: string; side: Side }> = [];
 
-      const tryPush = (loc: Location | undefined | null, text: string) => {
-        if (!loc || (loc.lat === 0 && loc.lng === 0)) return;
-        const t = shortStopLabel(text);
-        if (!t) return;
-        const k = coordKey(loc.lat, loc.lng);
-        if (seen.has(k)) return;
-        seen.add(k);
-        // Alternate sides so neighbouring stops don't stack on the route
-        const side: Side = labels.length % 2 === 0 ? 'right' : 'left';
-        labels.push({ lat: loc.lat, lng: loc.lng, text: t, side });
-      };
+        const tryPush = (loc: Location | undefined | null, text: string | undefined | null) => {
+          if (!isValidLatLng(loc)) return;
+          const t = shortStopLabel(text);
+          if (!t) return;
+          const k = `${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}`;
+          if (seen.has(k)) return;
+          seen.add(k);
+          // Alternate sides so neighbouring stops don't stack on the route
+          const side: Side = labels.length % 2 === 0 ? 'right' : 'left';
+          labels.push({ lat: loc.lat, lng: loc.lng, text: t, side });
+        };
 
-      // Journey order: start → intermediates → end (one bubble per unique point)
-      if (segments.length > 0) {
-        const first = segments[0];
-        tryPush(first.fromStop?.location, first.fromStop?.nameZh || first.fromStop?.name);
+        // Journey order: start → intermediates → end (one bubble per unique point)
+        if (segments.length > 0) {
+          const first = segments[0];
+          tryPush(first.fromStop?.location, first.fromStop?.nameZh || first.fromStop?.name);
 
-        for (let i = 0; i < segments.length - 1; i++) {
-          const loc =
-            segments[i].transferTo?.location || segments[i].toStop?.location;
-          tryPush(loc, segments[i].toStop?.nameZh || segments[i].toStop?.name);
+          for (let i = 0; i < segments.length - 1; i++) {
+            const loc =
+              segments[i].transferTo?.location || segments[i].toStop?.location;
+            tryPush(loc, segments[i].toStop?.nameZh || segments[i].toStop?.name);
+          }
+
+          const last = segments[segments.length - 1];
+          tryPush(last.toStop?.location, last.toStop?.nameZh || last.toStop?.name);
         }
 
-        const last = segments[segments.length - 1];
-        tryPush(last.toStop?.location, last.toStop?.nameZh || last.toStop?.name);
+        const bubbleCss =
+          'background:rgba(255,255,255,0.95);backdrop-filter:blur(4px);border-radius:6px;' +
+          'padding:2px 6px;font-size:11px;font-weight:700;line-height:1.2;' +
+          'box-shadow:0 1px 6px rgba(0,0,0,0.22);white-space:nowrap;color:#1f2937;' +
+          'border:1px solid rgba(255,255,255,0.9);';
+
+        for (const { lat, lng, text, side } of labels) {
+          const safe = escapeHtml(text);
+          // Single-line HTML — multi-line templates have caused mobile WebKit issues
+          const html =
+            side === 'right'
+              ? `<div style="position:relative;width:0;height:0;overflow:visible;"><div style="position:absolute;left:10px;top:0;transform:translateY(-50%);display:flex;align-items:center;"><div style="width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-right:5px solid rgba(255,255,255,0.95);"></div><div style="${bubbleCss}">${safe}</div></div></div>`
+              : `<div style="position:relative;width:0;height:0;overflow:visible;"><div style="position:absolute;right:10px;top:0;transform:translateY(-50%);display:flex;align-items:center;flex-direction:row-reverse;"><div style="width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid rgba(255,255,255,0.95);"></div><div style="${bubbleCss}">${safe}</div></div></div>`;
+
+          const icon = L.divIcon({
+            className: 'chaser-map-label',
+            html,
+            iconSize: [1, 1],
+            iconAnchor: [0, 0],
+          });
+          const m = L.marker([lat, lng], {
+            icon,
+            interactive: false,
+            keyboard: false,
+            zIndexOffset: 1000,
+          }).addTo(map);
+          newMarkers.push(m);
+        }
+
+        markersRef.current = newMarkers;
+      } catch (err) {
+        console.error('[MapLabels] init failed', err);
       }
-
-      const bubbleCss =
-        'background:rgba(255,255,255,0.95);backdrop-filter:blur(4px);border-radius:6px;' +
-        'padding:2px 6px;font-size:11px;font-weight:700;line-height:1.2;' +
-        'box-shadow:0 1px 6px rgba(0,0,0,0.22);white-space:nowrap;color:#1f2937;' +
-        'border:1px solid rgba(255,255,255,0.9);';
-
-      for (const { lat, lng, text, side } of labels) {
-        // Anchor at stop; bubble sits beside the route with a small caret
-        const html =
-          side === 'right'
-            ? `<div style="position:relative;width:0;height:0;overflow:visible;">
-                <div style="position:absolute;left:10px;top:0;transform:translateY(-50%);display:flex;align-items:center;">
-                  <div style="width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-right:5px solid rgba(255,255,255,0.95);"></div>
-                  <div style="${bubbleCss}">${text}</div>
-                </div>
-              </div>`
-            : `<div style="position:relative;width:0;height:0;overflow:visible;">
-                <div style="position:absolute;right:10px;top:0;transform:translateY(-50%);display:flex;align-items:center;flex-direction:row-reverse;">
-                  <div style="width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid rgba(255,255,255,0.95);"></div>
-                  <div style="${bubbleCss}">${text}</div>
-                </div>
-              </div>`;
-
-        const icon = L.divIcon({
-          className: 'chaser-map-label',
-          html,
-          iconSize: [1, 1],
-          iconAnchor: [0, 0],
-        });
-        const m = L.marker([lat, lng], {
-          icon,
-          interactive: false,
-          keyboard: false,
-          zIndexOffset: 1000,
-        }).addTo(map);
-        newMarkers.push(m);
-      }
-
-      markersRef.current = newMarkers;
     };
 
     map.whenReady(init);
 
     return () => {
-      markersRef.current.forEach(m => m.remove());
+      try {
+        markersRef.current.forEach(m => m.remove());
+      } catch { /* map may already be gone */ }
       markersRef.current = [];
     };
   }, [segments, map]);
@@ -214,17 +226,21 @@ export default function MapView({
       const next = segments[i + 1];
       const transferLoc = current.transferTo?.location
         || current.toStop?.location;
-      if (transferLoc && (transferLoc.lat !== 0 || transferLoc.lng !== 0)) {
-        const stop = shortStopLabel(current.toStop.nameZh || current.toStop.name);
-        const route =
-          next.route.type === 'mtr'
-            ? getMTRLineName(next.route.name)
-            : next.route.name;
-        markers.push({
-          location: transferLoc,
-          label: `轉 ${stop} → ${route}`,
-        });
-      }
+      if (!isValidLatLng(transferLoc)) continue;
+      const stopName =
+        current.toStop?.nameZh || current.toStop?.name
+        || current.transferTo?.nameZh || current.transferTo?.name
+        || '';
+      const stop = shortStopLabel(stopName);
+      const routeName = next?.route?.name;
+      const route =
+        next?.route?.type === 'mtr' && routeName
+          ? getMTRLineName(routeName)
+          : (routeName || '');
+      markers.push({
+        location: transferLoc,
+        label: stop ? (route ? `轉 ${stop} → ${route}` : `轉 ${stop}`) : (route ? `轉 ${route}` : '轉車'),
+      });
     }
     return markers;
   }, [segments]);
