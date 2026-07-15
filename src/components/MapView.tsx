@@ -28,63 +28,120 @@ function FitBounds({ points }: { points: Location[] }) {
   return null;
 }
 
-// ─── MapLabels: bubble-style labels via Leaflet API ─────────────────
+// ─── MapLabels: side-offset bubble labels (don't cover the route) ───
 interface MapLabelsProps {
   segments: CommuteRoute['segments'];
   transferMarkers: Array<{ location: Location; label: string }>;
 }
-function MapLabels({ segments, transferMarkers }: MapLabelsProps) {
+
+/** Strip codes / tail clauses; keep ≤7 chars for map bubbles. */
+function shortStopLabel(raw: string | undefined | null): string {
+  if (!raw) return '';
+  let s = String(raw)
+    .replace(/\s*[（(][^）)]*[）)]\s*/g, '') // (TP930) / （北）
+    .replace(/[,，].*$/, '')                 // "富蝶邨, 近X" → "富蝶邨"
+    .replace(/\s+/g, '')
+    .trim();
+  // Drop trailing 站 if already long enough without it
+  if (s.length > 7 && s.endsWith('站') && !s.endsWith('總站')) s = s.slice(0, -1);
+  if (s.length > 7) s = s.slice(0, 7);
+  return s;
+}
+
+function MapLabels({ segments }: MapLabelsProps) {
   const map = useMap();
   const markersRef = useRef<L.Marker[]>([]);
-  const initializedRef = useRef(false);
 
   useEffect(() => {
     if (!map) return;
 
+    // Kill Leaflet's default white square on divIcon
+    if (typeof document !== 'undefined' && !document.getElementById('chaser-map-label-style')) {
+      const style = document.createElement('style');
+      style.id = 'chaser-map-label-style';
+      style.textContent =
+        '.chaser-map-label{background:transparent!important;border:none!important;}';
+      document.head.appendChild(style);
+    }
+
     const init = () => {
-      // Clear previous markers
       markersRef.current.forEach(m => m.remove());
       markersRef.current = [];
 
       const newMarkers: L.Marker[] = [];
+      const seen = new Set<string>();
+      const coordKey = (lat: number, lng: number) =>
+        `${lat.toFixed(5)},${lng.toFixed(5)}`;
 
-      const addLabel = (lat: number, lng: number, text: string) => {
-        const icon = L.divIcon({
-          className: '',
-          html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
-            <div style="background:rgba(255,255,255,0.95);backdrop-filter:blur(4px);border-radius:8px;padding:3px 10px;font-size:12px;font-weight:700;box-shadow:0 2px 10px rgba(0,0,0,0.25);white-space:nowrap;color:#1f2937;border:1px solid rgba(255,255,255,0.9);">
-              ${text}
-            </div>
-            <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid rgba(255,255,255,0.95);"></div>
-          </div>`,
-        });
-        const m = L.marker([lat, lng], { icon, interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(map);
-        newMarkers.push(m);
+      type Side = 'left' | 'right';
+      const labels: Array<{ lat: number; lng: number; text: string; side: Side }> = [];
+
+      const tryPush = (loc: Location | undefined | null, text: string) => {
+        if (!loc || (loc.lat === 0 && loc.lng === 0)) return;
+        const t = shortStopLabel(text);
+        if (!t) return;
+        const k = coordKey(loc.lat, loc.lng);
+        if (seen.has(k)) return;
+        seen.add(k);
+        // Alternate sides so neighbouring stops don't stack on the route
+        const side: Side = labels.length % 2 === 0 ? 'right' : 'left';
+        labels.push({ lat: loc.lat, lng: loc.lng, text: t, side });
       };
 
-      // Boarding stops
-      for (const seg of segments) {
-        const loc = seg.fromStop?.location;
-        if (loc && (loc.lat !== 0 || loc.lng !== 0)) {
-          addLabel(loc.lat, loc.lng, `🚏 ${seg.fromStop.nameZh || seg.fromStop.name}`);
+      // Journey order: start → intermediates → end (one bubble per unique point)
+      if (segments.length > 0) {
+        const first = segments[0];
+        tryPush(first.fromStop?.location, first.fromStop?.nameZh || first.fromStop?.name);
+
+        for (let i = 0; i < segments.length - 1; i++) {
+          const loc =
+            segments[i].transferTo?.location || segments[i].toStop?.location;
+          tryPush(loc, segments[i].toStop?.nameZh || segments[i].toStop?.name);
         }
+
+        const last = segments[segments.length - 1];
+        tryPush(last.toStop?.location, last.toStop?.nameZh || last.toStop?.name);
       }
 
-      // Alighting stops
-      for (const seg of segments) {
-        const loc = seg.toStop?.location;
-        if (loc && (loc.lat !== 0 || loc.lng !== 0)) {
-          addLabel(loc.lat, loc.lng, `⬇ ${seg.toStop.nameZh || seg.toStop.name}`);
-        }
-      }
+      const bubbleCss =
+        'background:rgba(255,255,255,0.95);backdrop-filter:blur(4px);border-radius:6px;' +
+        'padding:2px 6px;font-size:11px;font-weight:700;line-height:1.2;' +
+        'box-shadow:0 1px 6px rgba(0,0,0,0.22);white-space:nowrap;color:#1f2937;' +
+        'border:1px solid rgba(255,255,255,0.9);';
 
-      // Transfer stops
-      for (const tm of transferMarkers) {
-        addLabel(tm.location.lat, tm.location.lng, tm.label);
+      for (const { lat, lng, text, side } of labels) {
+        // Anchor at stop; bubble sits beside the route with a small caret
+        const html =
+          side === 'right'
+            ? `<div style="position:relative;width:0;height:0;overflow:visible;">
+                <div style="position:absolute;left:10px;top:0;transform:translateY(-50%);display:flex;align-items:center;">
+                  <div style="width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-right:5px solid rgba(255,255,255,0.95);"></div>
+                  <div style="${bubbleCss}">${text}</div>
+                </div>
+              </div>`
+            : `<div style="position:relative;width:0;height:0;overflow:visible;">
+                <div style="position:absolute;right:10px;top:0;transform:translateY(-50%);display:flex;align-items:center;flex-direction:row-reverse;">
+                  <div style="width:0;height:0;border-top:4px solid transparent;border-bottom:4px solid transparent;border-left:5px solid rgba(255,255,255,0.95);"></div>
+                  <div style="${bubbleCss}">${text}</div>
+                </div>
+              </div>`;
+
+        const icon = L.divIcon({
+          className: 'chaser-map-label',
+          html,
+          iconSize: [1, 1],
+          iconAnchor: [0, 0],
+        });
+        const m = L.marker([lat, lng], {
+          icon,
+          interactive: false,
+          keyboard: false,
+          zIndexOffset: 1000,
+        }).addTo(map);
+        newMarkers.push(m);
       }
 
       markersRef.current = newMarkers;
-      initializedRef.current = true;
     };
 
     map.whenReady(init);
@@ -92,9 +149,8 @@ function MapLabels({ segments, transferMarkers }: MapLabelsProps) {
     return () => {
       markersRef.current.forEach(m => m.remove());
       markersRef.current = [];
-      initializedRef.current = false;
     };
-  }, [segments, transferMarkers, map]);
+  }, [segments, map]);
 
   return null;
 }
@@ -159,9 +215,14 @@ export default function MapView({
       const transferLoc = current.transferTo?.location
         || current.toStop?.location;
       if (transferLoc && (transferLoc.lat !== 0 || transferLoc.lng !== 0)) {
+        const stop = shortStopLabel(current.toStop.nameZh || current.toStop.name);
+        const route =
+          next.route.type === 'mtr'
+            ? getMTRLineName(next.route.name)
+            : next.route.name;
         markers.push({
           location: transferLoc,
-          label: `🔄 轉車: ${current.toStop.nameZh || current.toStop.name} → ${next.route.type === 'mtr' ? getMTRLineName(next.route.name) : next.route.name}`,
+          label: `轉 ${stop} → ${route}`,
         });
       }
     }
