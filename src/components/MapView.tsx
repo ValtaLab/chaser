@@ -32,6 +32,8 @@ function FitBounds({ points }: { points: Location[] }) {
 interface MapLabelsProps {
   segments: CommuteRoute['segments'];
   transferMarkers: Array<{ location: Location; label: string }>;
+  /** Optional path per segment — first/last point used when stop.location is 0/missing (common for bus). */
+  routePolylines?: Location[][];
 }
 
 /** Strip codes / tail clauses; keep ≤7 chars for map bubbles. */
@@ -65,7 +67,13 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function MapLabels({ segments }: MapLabelsProps) {
+function polyEnd(poly: Location[] | undefined, which: 'first' | 'last'): Location | null {
+  if (!poly || poly.length === 0) return null;
+  const p = which === 'first' ? poly[0] : poly[poly.length - 1];
+  return isValidLatLng(p) ? p : null;
+}
+
+function MapLabels({ segments, routePolylines }: MapLabelsProps) {
   const map = useMap();
   const markersRef = useRef<L.Marker[]>([]);
 
@@ -105,18 +113,34 @@ function MapLabels({ segments }: MapLabelsProps) {
         };
 
         // Journey order: start → intermediates → end (one bubble per unique point)
+        // Prefer stop.location; fall back to polyline ends (bus often has 0,0 until enrich)
         if (segments.length > 0) {
           const first = segments[0];
-          tryPush(first.fromStop?.location, first.fromStop?.nameZh || first.fromStop?.name);
+          tryPush(
+            isValidLatLng(first.fromStop?.location)
+              ? first.fromStop.location
+              : polyEnd(routePolylines?.[0], 'first'),
+            first.fromStop?.nameZh || first.fromStop?.name,
+          );
 
           for (let i = 0; i < segments.length - 1; i++) {
             const loc =
-              segments[i].transferTo?.location || segments[i].toStop?.location;
+              (isValidLatLng(segments[i].transferTo?.location) && segments[i].transferTo!.location)
+              || (isValidLatLng(segments[i].toStop?.location) && segments[i].toStop!.location)
+              || polyEnd(routePolylines?.[i], 'last')
+              || polyEnd(routePolylines?.[i + 1], 'first')
+              || null;
             tryPush(loc, segments[i].toStop?.nameZh || segments[i].toStop?.name);
           }
 
           const last = segments[segments.length - 1];
-          tryPush(last.toStop?.location, last.toStop?.nameZh || last.toStop?.name);
+          const lastIdx = segments.length - 1;
+          tryPush(
+            isValidLatLng(last.toStop?.location)
+              ? last.toStop.location
+              : polyEnd(routePolylines?.[lastIdx], 'last'),
+            last.toStop?.nameZh || last.toStop?.name,
+          );
         }
 
         const bubbleCss =
@@ -162,7 +186,7 @@ function MapLabels({ segments }: MapLabelsProps) {
       } catch { /* map may already be gone */ }
       markersRef.current = [];
     };
-  }, [segments, map]);
+  }, [segments, routePolylines, map]);
 
   return null;
 }
@@ -256,7 +280,7 @@ export default function MapView({
     >
       <TileLayer url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png" />
       <FitBounds points={allPoints} />
-      <MapLabels segments={segments} transferMarkers={transferMarkers} />
+      <MapLabels segments={segments} transferMarkers={transferMarkers} routePolylines={routePolylines} />
 
       {/* Full route polylines per segment (colored) */}
       {routePolylines && routePolylines.map((poly, i) => {

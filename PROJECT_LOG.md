@@ -2,12 +2,20 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-07-15T14:30:00+08:00
-last_version: map-label-crash-fix
+last_deploy: 2026-07-15T15:10:00+08:00
+last_version: bus-map-bubbles
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
+
+
+### 2026-07-15 | 巴士站氣泡唔顯示
+**版本:** bus-map-bubbles
+1. Root cause: MapView 用 `route.segments`（巴士 coords 多數 0,0）；enrich 結果只入 ref → 唔 re-render
+2. 改 `mapSegments` state 餵 MapView（enrich 完更新）
+3. MapLabels fallback：stop.location 無效時用 route polyline 首/尾點
+
 
 
 ### 2026-07-15 | Tracking crash fix (map labels)

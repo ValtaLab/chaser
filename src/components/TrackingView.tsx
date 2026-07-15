@@ -212,6 +212,8 @@ export default function TrackingView({
   const [gpsStatus, setGpsStatus] = useState<'waiting' | 'active' | 'error' | 'none'>('none');
   const enrichedRouteRef = useRef<{ origin: Location; destination: Location } | null>(null);
   const enrichedSegmentsRef = useRef<CommuteSegment[] | null>(null);
+  // State so MapView re-renders with bus coords after enrichment (ref alone never triggers UI)
+  const [mapSegments, setMapSegments] = useState<CommuteSegment[]>(route.segments);
   // Cache: Set of route names that Citybus also serves (joint-operated routes like 307P)
   const citybusRouteCacheRef = useRef<Set<string>>(new Set());
   const [enrichmentDone, setEnrichmentDone] = useState(false);
@@ -225,12 +227,15 @@ export default function TrackingView({
   // ── Enrich segments with coordinates (fix zero-coord routes) ───────
   useEffect(() => {
     // Fire-and-forget: enrich coordinates in background, don't block UI
+    setMapSegments(route.segments);
+    setEnrichmentDone(false);
     (async () => {
       try {
         const segments = await Promise.all(
           route.segments.map(seg => enrichSegmentWithCoords(seg))
         );
         enrichedSegmentsRef.current = segments;
+        setMapSegments(segments);
         const origin = segments[0]?.fromStop.location;
         const dest = segments[segments.length - 1]?.toStop.location;
         if (origin && dest &&
@@ -240,6 +245,14 @@ export default function TrackingView({
           enrichedRouteRef.current = { origin, destination: dest };
           addDebug(`🗺️ enriched coords: origin=(${origin.lat.toFixed(4)},${origin.lng.toFixed(4)})`);
         }
+        const busFixed = segments.filter((s, i) => {
+          if (s.route.type === 'mtr') return false;
+          const before = route.segments[i];
+          const wasZero = !before?.fromStop.location?.lat && !before?.fromStop.location?.lng;
+          const nowOk = !!(s.fromStop.location?.lat || s.fromStop.location?.lng);
+          return wasZero && nowOk;
+        }).length;
+        if (busFixed > 0) addDebug(`🗺️ bus stop coords resolved: ${busFixed} segment(s)`);
       } catch {
         // Silent fail — progress notification just won't work for old routes
       }
@@ -1004,10 +1017,10 @@ export default function TrackingView({
         <MapView
           center={mapCenter}
           polylinePoints={polylinePoints}
-          segments={route.segments}
+          segments={mapSegments}
           currentLocation={liveLocation}
           routePolylines={routePolylines.length > 0 ? routePolylines : undefined}
-          segmentTypes={route.segments.map(seg => ({ type: seg.route.type, name: seg.route.name }))}
+          segmentTypes={mapSegments.map(seg => ({ type: seg.route.type, name: seg.route.name }))}
         />
       </div>
 
