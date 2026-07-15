@@ -24,30 +24,78 @@ export interface SegmentAlternatives {
   segmentLabel: string;       // e.g. "72X · 富蝶總站"
   configuredRoute: string;     // user's chosen route
   configuredWaitMinutes: number;  // how long user's route arrives
-  isLastBusPassed: boolean;    // true if all configured ETAs are -1 (last bus passed)
+  isLastBusPassed: boolean;    // true only with strong evidence (not mere empty ETA)
+  noEtaData: boolean;          // true when we have no usable ETA (API empty/fail) — NOT last service
   alternatives: AlternativeRoute[];  // sorted by time saved (most saved first)
+}
+
+/**
+ * Empty ETA ≠ last service. Only claim last service when:
+ * - Operator remark says so, OR
+ * - All ETAs are -1 with last-service wording, OR
+ * - Very late night (00:00–04:59) and zero positive ETAs after a real fetch returned rows
+ */
+export function detectLastServicePassed(
+  configuredETAs: { minutesAway: number; remark?: string }[],
+  routeType: string,
+): { isLastServicePassed: boolean; noEtaData: boolean } {
+  const positive = configuredETAs.filter(e => e.minutesAway >= 0);
+  if (positive.length > 0) {
+    return { isLastServicePassed: false, noEtaData: false };
+  }
+
+  const remarks = configuredETAs.map(e => e.remark || '').join(' ');
+  if (/最後|尾班|已過/.test(remarks)) {
+    return { isLastServicePassed: true, noEtaData: false };
+  }
+
+  // No rows at all → missing data, not end of service
+  if (configuredETAs.length === 0) {
+    return { isLastServicePassed: false, noEtaData: true };
+  }
+
+  // Rows exist but all invalid (-1) without last-service remark
+  // Only treat as last service in the deep night window
+  const hour = new Date().getHours(); // 0–23 local
+  const lateNight = hour >= 0 && hour < 5;
+  // MTR: never claim last train before late night solely on empty/invalid ETA
+  if (routeType === 'mtr' && !lateNight) {
+    return { isLastServicePassed: false, noEtaData: true };
+  }
+  if (!lateNight) {
+    return { isLastServicePassed: false, noEtaData: true };
+  }
+  return { isLastServicePassed: true, noEtaData: false };
 }
 
 // ─── Main function ───────────────────────────────────────────────────
 
 export async function findAlternativesForSegment(
   segment: CommuteSegment,
-  configuredETAs: { minutesAway: number; destination: string }[],
+  configuredETAs: { minutesAway: number; destination: string; remark?: string }[],
 ): Promise<SegmentAlternatives> {
-  // Detect if last bus has passed (all ETAs are -1)
-  const isLastBusPassed = configuredETAs.length === 0 || configuredETAs.every(eta => eta.minutesAway < 0);
+  const { isLastServicePassed, noEtaData } = detectLastServicePassed(
+    configuredETAs,
+    segment.route.type,
+  );
+  const isLastBusPassed = isLastServicePassed;
   
   const result: SegmentAlternatives = {
     segmentId: segment.id,
     segmentLabel: `${segment.route.type === 'mtr' ? getMTRLineName(segment.route.name) : segment.route.name} · ${segment.fromStop.nameZh || segment.fromStop.name}`,
     configuredRoute: segment.route.type === 'mtr' ? getMTRLineName(segment.route.name) : segment.route.name,
-    configuredWaitMinutes: isLastBusPassed ? 999 : configuredETAs[0].minutesAway,
+    configuredWaitMinutes: isLastBusPassed
+      ? 999
+      : (configuredETAs.find(e => e.minutesAway >= 0)?.minutesAway ?? 999),
     isLastBusPassed,
+    noEtaData,
     alternatives: [],
   };
 
   // Get user's next bus arrival time
-  const userNextArrival = isLastBusPassed ? 999 : configuredETAs[0].minutesAway;
+  const userNextArrival = isLastBusPassed || noEtaData
+    ? 999
+    : (configuredETAs.find(e => e.minutesAway >= 0)?.minutesAway ?? 999);
 
   // ── Bus alternatives ────────────────────────────────────────────
   if (segment.route.type === 'bus') {

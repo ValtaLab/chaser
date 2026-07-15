@@ -10,6 +10,13 @@ last_update_by: HermesBPi
 # 趕車 (Chaser) — 項目進展日誌
 
 
+### 2026-07-15 | 誤報「尾班車已過」
+1. 舊：任何段 ETA 空或全 -1 → isLastBusPassed（7pm 東鐵都誤報）
+2. 新：要有「最後/尾班/已過」remark，或 0–5 點先當尾班；空資料 = noEtaData 唔彈警告
+3. 只檢查當前段；alternatives 永遠 refresh 清舊警告
+
+
+
 ### 2026-07-15 | 巴士車程估算過短
 **版本:** bus-ride-est
 1. 舊：直線距離÷18km/h、最少5′ → 大埔中心→富蝶 出5′

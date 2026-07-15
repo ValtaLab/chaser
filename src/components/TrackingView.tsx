@@ -773,12 +773,19 @@ export default function TrackingView({
       for (const segETA of segmentETAs) {
         const seg = route.segments.find(s => s.id === segETA.segmentId);
         if (!seg) continue;
+        const segIdx = route.segments.findIndex(s => s.id === segETA.segmentId);
+
+        // Skip segments already completed (don't warn about their "last bus")
+        if (midJourney?.completedBefore.includes(segIdx)) continue;
+        // Only evaluate active boarding segment when phase known
+        if (midJourney?.etaSegmentIndex != null && segIdx !== midJourney.etaSegmentIndex) continue;
 
         addDebug(`[AltRoutes] Checking ${seg.route.name} from ${seg.fromStop.nameZh}`);
         addDebug(`[AltRoutes] ETAs: ${JSON.stringify(segETA.etas.map(e => ({ min: e.minutesAway, dest: e.destination })))}`);
         try {
           const result = await findAlternativesForSegment(seg, segETA.etas);
-          addDebug(`[AltRoutes] Found ${result.alternatives.length} alts, isLastBusPassed=${result.isLastBusPassed}`);
+          addDebug(`[AltRoutes] Found ${result.alternatives.length} alts, isLastBusPassed=${result.isLastBusPassed} noEta=${result.noEtaData}`);
+          // Only surface real last-service or real alternatives — never empty-data noise
           if (result.alternatives.length > 0 || result.isLastBusPassed) {
             altResults.push(result);
           }
@@ -787,13 +794,11 @@ export default function TrackingView({
         }
       }
       addDebug(`[AltRoutes] Total: ${altResults.length} alternatives`);
-      // Only update if we found alternatives, otherwise keep previous state
-      if (altResults.length > 0) {
-        setAlternatives(altResults);
-      }
+      // Always update (clear stale "尾班已過" when ETAs recover)
+      setAlternatives(altResults);
     }
     findAlts();
-  }, [segmentETAs, route.segments, addDebug]);
+  }, [segmentETAs, route.segments, addDebug, midJourney]);
 
   // ── Proximity-based arrival notifications ─────────────────────
   const notifiedStations = useRef<Set<string>>(new Set());
