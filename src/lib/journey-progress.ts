@@ -1,4 +1,4 @@
-// Detect whether user is already mid-route (on vehicle) when starting tracking.
+// Detect whether user is already mid-route (on vehicle) when starting / during tracking.
 // Pure geometry on GPS + per-segment polylines — no network.
 
 import type { Location } from '@/types';
@@ -22,8 +22,16 @@ export interface MidJourneyState {
   fraction: number;
   remainingFraction: number;
   distToPolylineM: number;
+  distToEndM: number;
   /** Segment indices fully behind the user (skip entirely) */
   completedBefore: number[];
+  /**
+   * Which segment's boarding-stop ETA to show in the floating card.
+   * null = none (riding mid-segment, not yet near alight / next board).
+   */
+  etaSegmentIndex: number | null;
+  /** Near alight stop of current ride — ready to transfer / end */
+  nearAlight: boolean;
 }
 
 const DEFAULTS = {
@@ -35,6 +43,9 @@ const DEFAULTS = {
   minFraction: 0.08,
   /** Absolute along-route distance also qualifies */
   minAlongM: 600,
+  /** Near end of ride — treat as at transfer / alight */
+  nearAlightFraction: 0.88,
+  nearAlightDistM: 450,
 };
 
 function projectPointToSegment(
@@ -60,7 +71,6 @@ function projectPointToSegment(
   }
   const qx = ax + t * dx;
   const qy = ay + t * dy;
-  // Approximate inverse
   const qLat = qy / 6371000 * 180 / Math.PI;
   const qLng = qx / (6371000 * Math.cos(lat0)) * 180 / Math.PI;
   const point = { lat: qLat, lng: qLng };
@@ -75,7 +85,6 @@ export function progressOnPolyline(
   if (!poly || poly.length < 2) return null;
   if (!Number.isFinite(user.lat) || !Number.isFinite(user.lng)) return null;
 
-  // Cumulative lengths
   const edgeLens: number[] = [];
   let total = 0;
   for (let i = 0; i < poly.length - 1; i++) {
@@ -110,7 +119,8 @@ export function progressOnPolyline(
 }
 
 /**
- * Find best-matching segment and decide if user is already mid-journey.
+ * Find best-matching segment and decide journey phase (mid-route / transfer / waiting).
+ * Continuously usable while tracking — not only at start.
  */
 export function detectMidJourney(
   user: Location | null | undefined,
@@ -120,20 +130,20 @@ export function detectMidJourney(
   if (!user || !polylines?.length) return null;
   const cfg = { ...DEFAULTS, ...opts };
 
-  let best: SegmentProgress | null = null;
-  let bestIdx = -1;
-
+  // Score every segment — prefer later segments when distances are similar (transfer point)
+  type Scored = SegmentProgress & { score: number };
+  const scored: Scored[] = [];
   for (let i = 0; i < polylines.length; i++) {
     const p = progressOnPolyline(user, polylines[i]);
     if (!p) continue;
     p.segmentIndex = i;
-    if (!best || p.distToPolylineM < best.distToPolylineM) {
-      best = p;
-      bestIdx = i;
-    }
+    // Prefer closer poly; slight bias to later segments so transfer stop picks next ride
+    const score = p.distToPolylineM - i * 15;
+    scored.push({ ...p, score });
   }
-
-  if (!best || bestIdx < 0) return null;
+  if (scored.length === 0) return null;
+  scored.sort((a, b) => a.score - b.score);
+  const best = scored[0];
   if (best.distToPolylineM > cfg.maxOffRouteM) return null;
 
   const pastBoard =
@@ -141,24 +151,60 @@ export function detectMidJourney(
     best.fraction >= cfg.minFraction ||
     best.alongRouteM >= cfg.minAlongM;
 
-  // Near start of route on poly but still close to fromStop end → waiting, not onboard
+  const nearAlight =
+    best.fraction >= cfg.nearAlightFraction ||
+    best.distToEndM <= cfg.nearAlightDistM;
+
+  // ── Waiting near boarding of this segment (not yet left stop) ──
   if (!pastBoard) {
     return {
       alreadyOnBoard: false,
-      segmentIndex: bestIdx,
+      segmentIndex: best.segmentIndex,
       fraction: best.fraction,
       remainingFraction: 1 - best.fraction,
       distToPolylineM: best.distToPolylineM,
-      completedBefore: bestIdx > 0 ? Array.from({ length: bestIdx }, (_, k) => k) : [],
+      distToEndM: best.distToEndM,
+      completedBefore: best.segmentIndex > 0
+        ? Array.from({ length: best.segmentIndex }, (_, k) => k)
+        : [],
+      etaSegmentIndex: best.segmentIndex,
+      nearAlight: false,
     };
   }
 
+  // ── On board, near alight → promote to next segment (transfer) ──
+  if (nearAlight && best.segmentIndex + 1 < polylines.length) {
+    const next = best.segmentIndex + 1;
+    return {
+      alreadyOnBoard: false,
+      segmentIndex: next,
+      fraction: 0,
+      remainingFraction: 1,
+      distToPolylineM: best.distToPolylineM,
+      distToEndM: best.distToEndM,
+      completedBefore: Array.from({ length: next }, (_, k) => k),
+      etaSegmentIndex: next,
+      nearAlight: true,
+    };
+  }
+
+  // ── On board mid-ride ──
   return {
     alreadyOnBoard: true,
-    segmentIndex: bestIdx,
+    segmentIndex: best.segmentIndex,
     fraction: best.fraction,
-    remainingFraction: Math.max(0.05, 1 - best.fraction), // keep at least 5% for transfer timing
+    remainingFraction: Math.max(0.05, 1 - best.fraction),
     distToPolylineM: best.distToPolylineM,
-    completedBefore: Array.from({ length: bestIdx }, (_, k) => k),
+    distToEndM: best.distToEndM,
+    completedBefore: Array.from({ length: best.segmentIndex }, (_, k) => k),
+    // No boarding ETA while mid-ride; next appears when nearAlight
+    etaSegmentIndex: null,
+    nearAlight,
   };
+}
+
+/** Fingerprint for DO resync — changes when phase meaningfully shifts */
+export function midJourneyKey(m: MidJourneyState | null): string {
+  if (!m) return 'none';
+  return `${m.segmentIndex}:${m.alreadyOnBoard ? 'ride' : 'wait'}:${m.etaSegmentIndex ?? 'x'}:${Math.floor(m.fraction * 10)}`;
 }

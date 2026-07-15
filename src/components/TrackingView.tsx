@@ -37,7 +37,7 @@ function isSameMTRDirection(lineCode: string, fromStationCode: string, destStati
 }
 import { snapToRoads, haversineMeters } from '@/lib/road-snap';
 import { enrichSegmentWithCoords } from '@/lib/stop-coords';
-import { detectMidJourney, type MidJourneyState } from '@/lib/journey-progress';
+import { detectMidJourney, midJourneyKey, type MidJourneyState } from '@/lib/journey-progress';
 import SmartJourneyTimeline from './SmartJourneyTimeline';
 import AlternativeRouteCard from './AlternativeRouteCard';
 import type { CommuteRoute, CommuteSegment, Location, SmartSegment, SmartRouteRecommendation } from '@/types';
@@ -220,10 +220,11 @@ export default function TrackingView({
   const [enrichmentDone, setEnrichmentDone] = useState(false);
   /** GPS already mid-route when journey starts — skip boarding for that segment */
   const [midJourney, setMidJourney] = useState<MidJourneyState | null>(null);
-  const midJourneySentRef = useRef(false);
-  // Reset DO start guard when route changes
+  /** Last phase key pushed to DO — resync when segment phase changes */
+  const lastDoPhaseRef = useRef<string>('');
+  // Reset DO sync guard when route changes
   useEffect(() => {
-    midJourneySentRef.current = false;
+    lastDoPhaseRef.current = '';
     setMidJourney(null);
   }, [route.id]);
   const addDebug = useCallback((msg: string) => {
@@ -412,6 +413,20 @@ export default function TrackingView({
   // Initialize journeyEstimate with basic estimate
   const [journeyEstimate, setJourneyEstimate] = useState<SmartRouteRecommendation | null>(basicEstimate);
 
+  // ── Continuous mid-journey phase (ETA filter + estimate + DO resync) ──
+  useEffect(() => {
+    if (!liveLocation || routePolylines.length === 0) return;
+    const mid = detectMidJourney(liveLocation, routePolylines);
+    setMidJourney(mid);
+    if (mid) {
+      addDebug(
+        `📍 phase: seg${mid.segmentIndex} ${mid.alreadyOnBoard ? 'riding' : 'wait'} ` +
+        `etaSeg=${mid.etaSegmentIndex ?? '—'} f=${(mid.fraction * 100).toFixed(0)}% ` +
+        `off=${Math.round(mid.distToPolylineM)}m`,
+      );
+    }
+  }, [liveLocation, routePolylines, addDebug]);
+
   // Then: refine with GPS and real walk/ride calculations (+ mid-journey skip)
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -420,30 +435,20 @@ export default function TrackingView({
         || enrichedSegmentsRef.current?.[0]?.fromStop.location
         || defaultLoc;
       try {
-        // Detect already on vehicle from GPS vs polylines
-        let mid: MidJourneyState | null = null;
-        if (liveLocation && routePolylines.length > 0) {
-          mid = detectMidJourney(liveLocation, routePolylines);
-          if (mid?.alreadyOnBoard) {
-            setMidJourney(mid);
-            addDebug(
-              `🚌 mid-journey: seg${mid.segmentIndex} ${(mid.fraction * 100).toFixed(0)}% ` +
-              `remain=${(mid.remainingFraction * 100).toFixed(0)}% off=${Math.round(mid.distToPolylineM)}m`,
-            );
-          } else if (mid) {
-            setMidJourney(null);
-          }
-        }
+        const mid =
+          liveLocation && routePolylines.length > 0
+            ? detectMidJourney(liveLocation, routePolylines)
+            : midJourney;
 
         addDebug(`📍 ${liveLocation ? 'GPS' : (enrichedSegmentsRef.current?.[0]?.fromStop.location ? '車站' : '預設')}: (${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)})`);
         const result = await calculateTotalJourney(
           route,
           loc,
-          mid?.alreadyOnBoard
+          mid && (mid.alreadyOnBoard || mid.completedBefore.length > 0 || mid.segmentIndex > 0)
             ? {
                 segmentIndex: mid.segmentIndex,
-                remainingFraction: mid.remainingFraction,
-                alreadyOnBoard: true,
+                remainingFraction: mid.alreadyOnBoard ? mid.remainingFraction : 1,
+                alreadyOnBoard: mid.alreadyOnBoard,
               }
             : null,
         );
@@ -452,12 +457,11 @@ export default function TrackingView({
         const msg = err instanceof Error ? err.message : String(err);
         console.error('Journey estimate error:', err);
         addDebug(`⚠️ 詳細估算失敗: ${msg}`);
-        // Keep the basic estimate, just log the error
       }
-    }, 1500);
+    }, 1200);
 
     return () => clearTimeout(timer);
-  }, [route, liveLocation, enrichmentDone, routePolylines]);
+  }, [route, liveLocation, enrichmentDone, routePolylines, midJourney]);
 
   // ── Fetch full route stop sequences for all segments ─────────────
   useEffect(() => {
@@ -814,6 +818,14 @@ export default function TrackingView({
       for (const segETA of segmentETAs) {
         const segData = route.segments.find(s => s.id === segETA.segmentId);
         if (!segData) continue;
+        const segIdx = route.segments.findIndex(s => s.id === segETA.segmentId);
+
+        // Don't notify for segments already completed / not the active board
+        if (midJourney) {
+          if (midJourney.completedBefore.includes(segIdx)) continue;
+          if (midJourney.etaSegmentIndex !== null && segIdx !== midJourney.etaSegmentIndex) continue;
+          if (midJourney.alreadyOnBoard && midJourney.etaSegmentIndex === null) continue;
+        }
 
         const stopLoc = segData.fromStop.location;
         if (!stopLoc || (stopLoc.lat === 0 && stopLoc.lng === 0)) continue;
@@ -844,7 +856,7 @@ export default function TrackingView({
     } catch (err) {
       addDebug(`🔔 notification error: ${err}`);
     }
-  }, [liveLocation, segmentETAs, route.segments]);
+  }, [liveLocation, segmentETAs, route.segments, midJourney]);
 
   // ── Transfer proximity: approaching alighting stop → next segment ETAs ──
   useEffect(() => {
@@ -937,9 +949,10 @@ export default function TrackingView({
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
-    const startDo = async (mid: MidJourneyState | null) => {
-      if (midJourneySentRef.current || cancelled) return;
-      midJourneySentRef.current = true;
+    const startDo = async (mid: MidJourneyState | null, phaseKey: string, isResync: boolean) => {
+      if (cancelled) return;
+      if (lastDoPhaseRef.current === phaseKey) return;
+      lastDoPhaseRef.current = phaseKey;
 
       // Ensure Web Push subscription exists (permission may have been granted later)
       let pushSub: PushSubscriptionJSON | null = null;
@@ -983,21 +996,24 @@ export default function TrackingView({
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
+      // Only send confirm push on first start, not every progress resync
       const body: Record<string, unknown> = {
         segments: segs,
-        sendTest: true,
+        sendTest: !isResync,
         ...(pushSub ? { pushSub } : {}),
       };
 
-      // Mid-journey: skip boarding for active segment, mark prior complete
-      if (mid?.alreadyOnBoard) {
+      // Mid-journey / transfer: skip boarding for active segment, mark prior complete
+      if (mid && (mid.alreadyOnBoard || mid.completedBefore.length > 0 || mid.segmentIndex > 0)) {
         body.alreadyOnBoard = {
           segmentIndex: mid.segmentIndex,
-          remainingFraction: mid.remainingFraction,
+          remainingFraction: mid.alreadyOnBoard ? mid.remainingFraction : 1,
           completedBefore: mid.completedBefore,
+          riding: mid.alreadyOnBoard,
         };
         addDebug(
-          `🔔 DO start mid-journey seg${mid.segmentIndex} remain=${(mid.remainingFraction * 100).toFixed(0)}%`,
+          `🔔 DO ${isResync ? 'resync' : 'start'} phase=${phaseKey} seg${mid.segmentIndex} ` +
+          `${mid.alreadyOnBoard ? 'ride' : 'wait'} remain=${(mid.remainingFraction * 100).toFixed(0)}%`,
         );
       }
 
@@ -1010,43 +1026,46 @@ export default function TrackingView({
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
         if (res.ok) {
-          addDebug(`🔔 journey DO started: ${JSON.stringify(data).slice(0, 140)}`);
+          addDebug(`🔔 journey DO ok: ${JSON.stringify(data).slice(0, 140)}`);
         } else {
           addDebug(`🔔 journey start FAIL ${res.status}: ${JSON.stringify(data).slice(0, 120)}`);
-          midJourneySentRef.current = false; // allow retry
+          lastDoPhaseRef.current = ''; // allow retry
         }
       } catch (e) {
         if (!cancelled) {
           addDebug(`🔔 journey start network err: ${e}`);
-          midJourneySentRef.current = false;
+          lastDoPhaseRef.current = '';
         }
       }
     };
 
     // Prefer: wait until we have polylines + GPS to detect mid-journey.
-    // Fallback: start after 6s even without (don't block background monitor forever).
+    // Resync whenever phase key changes (transfer / progress).
     const tryStart = () => {
-      if (midJourneySentRef.current || cancelled) return;
+      if (cancelled) return;
       const hasPoly = routePolylines.length > 0;
       const hasGps = !!liveLocation;
       if (hasPoly && hasGps) {
         const mid = detectMidJourney(liveLocation!, routePolylines);
-        if (mid?.alreadyOnBoard) setMidJourney(mid);
-        void startDo(mid?.alreadyOnBoard ? mid : null);
+        if (mid) setMidJourney(mid);
+        const key = midJourneyKey(mid);
+        const isResync = lastDoPhaseRef.current !== '' && lastDoPhaseRef.current !== key;
+        void startDo(mid, key, isResync);
         return;
       }
     };
 
     tryStart();
-    // Retry when deps update; also hard timeout
+    // Fallback: start after 6s even without GPS (don't block background monitor forever).
     timer = setTimeout(() => {
-      if (!midJourneySentRef.current && !cancelled) {
+      if (cancelled) return;
+      if (lastDoPhaseRef.current === '') {
         const mid =
           liveLocation && routePolylines.length > 0
             ? detectMidJourney(liveLocation, routePolylines)
             : null;
-        if (mid?.alreadyOnBoard) setMidJourney(mid);
-        void startDo(mid?.alreadyOnBoard ? mid : null);
+        if (mid) setMidJourney(mid);
+        void startDo(mid, midJourneyKey(mid), false);
       }
     }, 6000);
 
@@ -1146,6 +1165,19 @@ export default function TrackingView({
         <div className="px-2 pb-2 space-y-1">
           {segmentETAs.map((seg) => {
             const segData = route.segments.find(s => s.id === seg.segmentId);
+            const segIdx = route.segments.findIndex(s => s.id === seg.segmentId);
+
+            // Hide completed / already-passed segments (e.g. 307 after alight at 大埔)
+            if (midJourney) {
+              if (midJourney.completedBefore.includes(segIdx)) return null;
+              if (midJourney.etaSegmentIndex !== null && segIdx !== midJourney.etaSegmentIndex) {
+                return null;
+              }
+              if (midJourney.etaSegmentIndex === null && midJourney.alreadyOnBoard) {
+                return null;
+              }
+            }
+
             const isMTR = segData?.route.type === 'mtr';
             const destStationCode = isMTR ? segData?.toStop.id : null;
             
@@ -1212,6 +1244,11 @@ export default function TrackingView({
               </div>
             );
           })}
+          {midJourney?.alreadyOnBoard && midJourney.etaSegmentIndex === null && (
+            <p className="text-[9px] text-blue-300/90 px-1 py-0.5">
+              🚌 乘搭中 · 接近落車站先顯示下班 ETA
+            </p>
+          )}
         </div>
       </div>
       )}

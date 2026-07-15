@@ -10,6 +10,14 @@ last_update_by: HermesBPi
 # 趕車 (Chaser) — 項目進展日誌
 
 
+### 2026-07-15 | ETA 跟進度 + 重入 App 持續更新
+**App + Worker** `eta-phase-20260715`
+1. ETA 卡片只顯示當前要上嘅程（轉車站唔再顯示 307 趕快）
+2. GPS 持續 update midJourney phase；接近落車站 → promote 下一程
+3. DO 按 phase key resync（轉車／進度變會更新剩餘 ride + 推送狀態）
+
+
+
 ### 2026-07-15 | Mid-journey auto skip boarding
 **App + Worker** `mid-journey-20260715`
 1. GPS 對 polyline：離線 <150m + 已過上車站 → 判定途中
