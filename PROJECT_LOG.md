@@ -10,6 +10,10 @@ last_update_by: HermesBPi
 # 趕車 (Chaser) — 項目進展日誌
 
 
+### 2026-07-17 | 港鐵停運仍顯示 205′ 假 ETA
+**App** `alternative-routes.ts` `detectLastServicePassed`
+- 凌晨 0–6 點若只得 >90′ 遠期 ETA（港鐵 API 回「首班」），當尾班／已停運，唔再顯示 205′ 等假到站時間
+
 ### 2026-07-17 | 尾班已過唔顯示第二行 ETA
 **App** `TrackingView.tsx` — 尾班車已過時只顯示段名 +「⚠️ 尾班車已過」，唔再固定畫逐線 ETA 第二行
 

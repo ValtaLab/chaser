@@ -32,20 +32,38 @@ export interface SegmentAlternatives {
 /**
  * Empty ETA ≠ last service. Only claim last service when:
  * - Operator remark says so, OR
- * - All ETAs are -1 with last-service wording, OR
+ * - Only far-future "schedule" ETAs remain overnight (e.g. MTR first train 200+ min), OR
  * - Very late night (00:00–04:59) and zero positive ETAs after a real fetch returned rows
+ *
+ * Pitfall (2026-07-17): MTR overnight returns first-train-of-day as ttnt≈200+ min.
+ * Treating those as live ETAs shows "205' 209'" at 2am while service is closed.
  */
+/** Beyond this = not imminent live service (next service day / first train) */
+export const MAX_IMMINENT_ETA_MIN = 90;
+
 export function detectLastServicePassed(
   configuredETAs: { minutesAway: number; remark?: string }[],
   routeType: string,
 ): { isLastServicePassed: boolean; noEtaData: boolean } {
+  const remarks = configuredETAs.map(e => e.remark || '').join(' ');
+  if (/最後|尾班|已過/.test(remarks)) {
+    return { isLastServicePassed: true, noEtaData: false };
+  }
+
+  const hour = new Date().getHours(); // 0–23 local
+  /** Overnight gap when far-only ETAs mean closed, not "wait 3h" */
+  const serviceGapWindow = hour >= 0 && hour < 6;
+  const lateNight = hour >= 0 && hour < 5;
+
   const positive = configuredETAs.filter(e => e.minutesAway >= 0);
-  if (positive.length > 0) {
+  const imminent = positive.filter(e => e.minutesAway <= MAX_IMMINENT_ETA_MIN);
+
+  if (imminent.length > 0) {
     return { isLastServicePassed: false, noEtaData: false };
   }
 
-  const remarks = configuredETAs.map(e => e.remark || '').join(' ');
-  if (/最後|尾班|已過/.test(remarks)) {
+  // Only far-future rows (e.g. MTR first train 205') during overnight gap → last service passed
+  if (positive.length > 0 && serviceGapWindow) {
     return { isLastServicePassed: true, noEtaData: false };
   }
 
@@ -56,8 +74,6 @@ export function detectLastServicePassed(
 
   // Rows exist but all invalid (-1) without last-service remark
   // Only treat as last service in the deep night window
-  const hour = new Date().getHours(); // 0–23 local
-  const lateNight = hour >= 0 && hour < 5;
   // MTR: never claim last train before late night solely on empty/invalid ETA
   if (routeType === 'mtr' && !lateNight) {
     return { isLastServicePassed: false, noEtaData: true };
