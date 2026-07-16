@@ -1401,7 +1401,8 @@ export default function TrackingView({
                     <span className="text-[8px] text-gray-500">無</span>
                   ) : null}
                 </div>
-                {routeLines && routeLines.length > 0 && (
+                {/* 尾班已過：唔使第二行固定顯示逐線 ETA，只保留提示 */}
+                {routeLines && routeLines.length > 0 && !isLastBusPassed && (
                   <div className="mt-1 space-y-0.5 border-t border-slate-600/30 pt-1">
                     {routeLines.map(renderLineEta)}
                   </div>

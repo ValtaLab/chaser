@@ -10,6 +10,9 @@ last_update_by: HermesBPi
 # 趕車 (Chaser) — 項目進展日誌
 
 
+### 2026-07-17 | 尾班已過唔顯示第二行 ETA
+**App** `TrackingView.tsx` — 尾班車已過時只顯示段名 +「⚠️ 尾班車已過」，唔再固定畫逐線 ETA 第二行
+
 ### 2026-07-17 | Tracking ETA 換乘／聯營全線顯示
 **App** `TrackingView.tsx`
 1. 巴士／MTR：平時都分行顯示（唔再淨係尾班先逐條）；聯營 K/C 預查城巴路線表
