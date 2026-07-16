@@ -255,6 +255,23 @@ function ensureAllBusOperatorLines(
   return out;
 }
 
+/** Show boarding leg + next transfer leg in ETA card (hide completed / mid-ride with no board ETA). */
+function isSegmentVisibleInEtaPanel(
+  segIdx: number,
+  mid: MidJourneyState | null,
+  totalSegments: number,
+): boolean {
+  if (!mid) return true;
+  if (mid.completedBefore.includes(segIdx)) return false;
+  if (mid.alreadyOnBoard && mid.etaSegmentIndex === null) return false;
+  if (mid.etaSegmentIndex !== null) {
+    if (segIdx === mid.etaSegmentIndex) return true;
+    if (segIdx === mid.etaSegmentIndex + 1 && segIdx < totalSegments) return true;
+    return false;
+  }
+  return true;
+}
+
 // ─── Main Component ──────────────────────────────────────────────────
 export default function TrackingView({
   route,
@@ -804,6 +821,17 @@ export default function TrackingView({
       );
       setSegmentETAs(results);
       setLastUpdated(new Date());
+      // Prime joint-route cache so ETA panel can show K+C rows before CTB ETAs return
+      for (const seg of route.segments) {
+        if (seg.route.type !== 'bus' || seg.route.operator === 'citybus') continue;
+        if (citybusRouteCacheRef.current.has(seg.route.name)) continue;
+        void getCitybusRouteInfo(seg.route.name).then((ctbRoutes) => {
+          if (ctbRoutes.length > 0) {
+            citybusRouteCacheRef.current.add(seg.route.name);
+            setSegmentETAs((prev) => (prev.length ? [...prev] : prev));
+          }
+        });
+      }
     } catch (err) {
       console.error('ETA fetch error:', err);
     }
@@ -1234,15 +1262,9 @@ export default function TrackingView({
             const segData = route.segments.find(s => s.id === seg.segmentId);
             const segIdx = route.segments.findIndex(s => s.id === seg.segmentId);
 
-            // Hide completed / already-passed segments (e.g. 307 after alight at 大埔)
-            if (midJourney) {
-              if (midJourney.completedBefore.includes(segIdx)) return null;
-              if (midJourney.etaSegmentIndex !== null && segIdx !== midJourney.etaSegmentIndex) {
-                return null;
-              }
-              if (midJourney.etaSegmentIndex === null && midJourney.alreadyOnBoard) {
-                return null;
-              }
+            // Hide completed; show current boarding + next transfer leg
+            if (!isSegmentVisibleInEtaPanel(segIdx, midJourney, route.segments.length)) {
+              return null;
             }
 
             const isMTR = segData?.route.type === 'mtr';
@@ -1271,36 +1293,49 @@ export default function TrackingView({
               filteredEtas.map(e => ({ minutesAway: e.minutesAway, remark: e.remark })),
               segData?.route.type ?? 'bus',
             );
-            let routeLines: EtaRouteLine[] | null =
-              isLastBusPassed && segData?.route.type !== 'mtr'
-                ? groupEtasByRouteLine(filteredEtas)
-                : null;
-            if (isLastBusPassed && isMTR && filteredEtas.length > 0) {
-              routeLines = filteredEtas.map((e) => ({
-                route: e.destination,
-                company: undefined,
-                topEtas: e.minutesAway >= 0 ? [e] : [],
-                remark: e.remark,
-              }));
-            }
-            if (routeLines && routeLines.length === 0 && segData) {
-              routeLines.push({
-                route: segData.route.name,
-                company: segData.route.operator === 'citybus' ? 'CTB' : 'KMB',
-                topEtas: [],
-                remark: remarkEta?.remark,
+            let routeLines: EtaRouteLine[] | null = null;
+
+            if (isMTR && filteredEtas.length > 0) {
+              const byDest = new Map<string, TransportETA[]>();
+              for (const e of filteredEtas) {
+                const list = byDest.get(e.destination) ?? [];
+                list.push(e);
+                byDest.set(e.destination, list);
+              }
+              routeLines = [...byDest.entries()].map(([dest, list]) => {
+                const sorted = [...list].sort((a, b) => a.minutesAway - b.minutesAway);
+                const valid = sorted.filter((e) => e.minutesAway >= 0);
+                const topEtas = valid.slice(0, 2);
+                const lineRemark =
+                  valid.length === 0 ? sorted.find((e) => e.remark)?.remark : undefined;
+                return {
+                  route: dest,
+                  company: undefined,
+                  topEtas,
+                  remark: lineRemark,
+                };
               });
-            }
-            if (routeLines && isLastBusPassed && segData?.route.type === 'bus') {
-              const jointCtb =
+            } else if (segData?.route.type === 'bus') {
+              const hasJointCtb =
                 citybusRouteCacheRef.current.has(segData.route.name) ||
                 filteredEtas.some((e) => e.company === 'CTB');
-              routeLines = ensureAllBusOperatorLines(
-                routeLines,
-                segData,
-                remarkEta?.remark,
-                jointCtb,
-              );
+              if (filteredEtas.length > 0 || isLastBusPassed || hasJointCtb) {
+                routeLines = groupEtasByRouteLine(filteredEtas);
+                if (routeLines.length === 0) {
+                  routeLines.push({
+                    route: segData.route.name,
+                    company: segData.route.operator === 'citybus' ? 'CTB' : 'KMB',
+                    topEtas: [],
+                    remark: remarkEta?.remark,
+                  });
+                }
+                routeLines = ensureAllBusOperatorLines(
+                  routeLines,
+                  segData,
+                  remarkEta?.remark,
+                  hasJointCtb,
+                );
+              }
             }
             const borderColor =
               minEta !== null && minEta <= 2
