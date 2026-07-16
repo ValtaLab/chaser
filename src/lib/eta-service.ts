@@ -8,101 +8,225 @@ import { enrichSegmentWithCoords } from './stop-coords';
 import type { CommuteRoute, CommuteSegment, Location, SmartRouteRecommendation, SmartSegment } from '@/types';
 
 // ── Bus ride time ────────────────────────────────────────────────────
-// Old formula: haversine / 0.3 km/min (18 km/h), min 5′ — too optimistic for HK
-// (e.g. 大埔中心→富蝶 ~1km straight → 5′; real ~10–15′ with stops/lights).
+// Method: sum per-stop hop times (same structure as USHB 站與站行車時間加總).
+// Hop formula calibrated to USHB 307P 富蝶→天后 = 72′ schedule.
+// Mild ×1.15 buffer for real traffic (schedule 72′ → ~83′; user peak ~90′).
+// Old end-to-end 11 km/h (×1.7/0.18) blew long routes to ~190′ — wrong.
 
-/** Count stop intervals between two stop IDs on a route-stop list. */
-function stopIntervalsBetween(
+const STOP_COORD_CACHE = new Map<string, Location>();
+/** Schedule→real buffer (congestion / dwell variance). */
+const SCHEDULE_TO_REAL = 1.15;
+
+/**
+ * Schedule-like minutes for ONE stop→next hop from straight-line distance.
+ * Calibrated so 307P 富蝶→天后 hop-sum ≈ 71–72′ (USHB total 72′).
+ */
+export function hopMinutesFromDistKm(distKm: number): number {
+  if (!Number.isFinite(distKm) || distKm <= 0) return 1;
+  if (distKm <= 0.2) return 1;
+  if (distKm <= 0.55) return 2;
+  if (distKm <= 0.9) return 3;
+  if (distKm <= 1.5) return 4;
+  if (distKm <= 3.0) return Math.max(5, Math.round(distKm * 3.0 + 1.5));
+  // Long tunnel/highway hop ≈ 47 km/h schedule (USHB 大老山/東隧 ~11′)
+  return Math.max(8, Math.round(distKm / 0.78));
+}
+
+/** End-to-end fallback when intermediate stops unavailable (~18 km/h road). */
+function endToEndBusMinutes(distKm: number): number {
+  if (!Number.isFinite(distKm) || distKm <= 0) return 12;
+  return Math.max(8, Math.ceil((distKm * 1.35) / 0.3));
+}
+
+function matchStopId(
   stops: { stop: string; seq: number }[],
+  id: string,
+): { stop: string; seq: number } | undefined {
+  if (!id) return undefined;
+  const up = id.toUpperCase();
+  return stops.find(s => s.stop === id || s.stop.toUpperCase() === up);
+}
+
+/** Find route-stop list containing both from and to (try KMB service types 1–3 + CTB). */
+async function resolveRouteStopList(
+  routeName: string,
+  operator: string | undefined,
   fromId: string,
   toId: string,
-): number | null {
-  if (!stops.length || !fromId || !toId) return null;
-  const from = stops.find(s => s.stop === fromId || s.stop.toUpperCase() === fromId.toUpperCase());
-  const to = stops.find(s => s.stop === toId || s.stop.toUpperCase() === toId.toUpperCase());
-  if (!from || !to) return null;
-  const n = Math.abs(to.seq - from.seq);
-  return n > 0 ? n : null;
+): Promise<{ stop: string; seq: number }[] | null> {
+  const isCtb = operator === 'citybus';
+  const tryLists: Array<() => Promise<{ stop: string; seq: number }[]>> = [];
+
+  for (const dir of ['O', 'I'] as const) {
+    if (isCtb) {
+      tryLists.push(() => getCitybusRouteStops(routeName, dir));
+      for (const st of ['1', '2', '3']) {
+        tryLists.push(() => getKMBRouteStops(routeName, dir, st));
+      }
+    } else {
+      for (const st of ['1', '2', '3']) {
+        tryLists.push(() => getKMBRouteStops(routeName, dir, st));
+      }
+      tryLists.push(() => getCitybusRouteStops(routeName, dir));
+    }
+  }
+
+  for (const load of tryLists) {
+    try {
+      const list = await load();
+      if (!list.length) continue;
+      if (matchStopId(list, fromId) && matchStopId(list, toId)) return list;
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+async function fetchStopLocation(
+  stopId: string,
+  preferCtb: boolean,
+): Promise<Location | null> {
+  if (!stopId) return null;
+  const cached = STOP_COORD_CACHE.get(stopId);
+  if (cached) return cached;
+
+  const loaders = preferCtb
+    ? [getCitybusStopInfo, getKMBStopInfo]
+    : [getKMBStopInfo, getCitybusStopInfo];
+
+  for (const load of loaders) {
+    try {
+      const info = await load(stopId);
+      if (info && Number.isFinite(info.lat) && Number.isFinite(info.long)) {
+        const loc = { lat: info.lat, lng: info.long };
+        if (loc.lat !== 0 || loc.lng !== 0) {
+          STOP_COORD_CACHE.set(stopId, loc);
+          return loc;
+        }
+      }
+    } catch {
+      /* try other operator */
+    }
+  }
+  return null;
 }
 
 /**
  * Estimate bus ride minutes between two stops.
- * Prefers stop-count (real route hops); falls back to road-adjusted haversine.
+ * Primary: sum per-hop schedule times along route-stop sequence (USHB-style).
+ * Fallback: end-to-end distance at ~18 km/h road speed.
  */
 export async function estimateBusRideMinutes(seg: {
   route: { name: string; operator?: string; stops?: { id: string }[] };
   fromStop: { id: string; location: Location };
   toStop: { id: string; location: Location };
 }): Promise<number> {
-  let intervals: number | null = null;
+  const preferCtb = seg.route.operator === 'citybus';
+  let hopSum: number | null = null;
+  let hopCount = 0;
+  let method = 'fallback';
 
-  // 1) Saved route.stops if present
-  const routeStops = seg.route.stops;
-  if (routeStops?.length) {
-    const fi = routeStops.findIndex(s => s.id === seg.fromStop.id);
-    const ti = routeStops.findIndex(s => s.id === seg.toStop.id);
-    if (fi >= 0 && ti >= 0 && fi !== ti) intervals = Math.abs(ti - fi);
-  }
-
-  // 2) Live KMB / Citybus route-stop API (both directions)
-  if (intervals == null) {
-    const isCtb = seg.route.operator === 'citybus';
-    try {
-      for (const dir of ['O', 'I'] as const) {
-        const list = isCtb
-          ? await getCitybusRouteStops(seg.route.name, dir)
-          : await getKMBRouteStops(seg.route.name, dir);
-        const n = stopIntervalsBetween(list, seg.fromStop.id, seg.toStop.id);
-        if (n != null) {
-          intervals = n;
-          break;
-        }
+  try {
+    // 1) Saved route.stops with ids
+    let orderedIds: string[] | null = null;
+    const saved = seg.route.stops;
+    if (saved?.length) {
+      const fi = saved.findIndex(s => s.id === seg.fromStop.id);
+      const ti = saved.findIndex(s => s.id === seg.toStop.id);
+      if (fi >= 0 && ti >= 0 && fi !== ti) {
+        const [a, b] = fi < ti ? [fi, ti] : [ti, fi];
+        orderedIds = saved.slice(a, b + 1).map(s => s.id);
       }
-      // Joint-operated: try the other operator if first failed
-      if (intervals == null) {
-        for (const dir of ['O', 'I'] as const) {
-          const list = isCtb
-            ? await getKMBRouteStops(seg.route.name, dir)
-            : await getCitybusRouteStops(seg.route.name, dir);
-          const n = stopIntervalsBetween(list, seg.fromStop.id, seg.toStop.id);
-          if (n != null) {
-            intervals = n;
-            break;
-          }
-        }
-      }
-    } catch {
-      /* ignore — fall back to distance */
     }
+
+    // 2) Live route-stop list (KMB service_type 1/2/3 — e.g. 307P 富蝶 = type 2)
+    if (!orderedIds) {
+      const list = await resolveRouteStopList(
+        seg.route.name,
+        seg.route.operator,
+        seg.fromStop.id,
+        seg.toStop.id,
+      );
+      if (list) {
+        const from = matchStopId(list, seg.fromStop.id)!;
+        const to = matchStopId(list, seg.toStop.id)!;
+        const lo = Math.min(from.seq, to.seq);
+        const hi = Math.max(from.seq, to.seq);
+        orderedIds = list
+          .filter(s => s.seq >= lo && s.seq <= hi)
+          .sort((x, y) => x.seq - y.seq)
+          .map(s => s.stop);
+      }
+    }
+
+    if (orderedIds && orderedIds.length >= 2) {
+      // Resolve coords: prefer known endpoints, fetch middles in parallel
+      const locs: (Location | null)[] = await Promise.all(
+        orderedIds.map(async (id, i) => {
+          if (i === 0 && !isZeroLocation(seg.fromStop.location) && id === seg.fromStop.id) {
+            return seg.fromStop.location;
+          }
+          if (
+            i === orderedIds!.length - 1 &&
+            !isZeroLocation(seg.toStop.location) &&
+            id === seg.toStop.id
+          ) {
+            return seg.toStop.location;
+          }
+          // endpoints may still need fetch if ids differ after reverse slice
+          if (id === seg.fromStop.id && !isZeroLocation(seg.fromStop.location)) {
+            return seg.fromStop.location;
+          }
+          if (id === seg.toStop.id && !isZeroLocation(seg.toStop.location)) {
+            return seg.toStop.location;
+          }
+          return fetchStopLocation(id, preferCtb);
+        }),
+      );
+
+      let sum = 0;
+      let hops = 0;
+      for (let i = 0; i < locs.length - 1; i++) {
+        const a = locs[i];
+        const b = locs[i + 1];
+        if (!a || !b || isZeroLocation(a) || isZeroLocation(b)) continue;
+        const dKm = haversineMeters(a, b) / 1000;
+        sum += hopMinutesFromDistKm(dKm);
+        hops++;
+      }
+      if (hops > 0) {
+        hopSum = sum;
+        hopCount = hops;
+        method = 'hop-sum';
+      }
+    }
+  } catch (e) {
+    console.warn('[Journey] hop-sum failed', e);
   }
 
-  // Distance-based estimate: road factor × slow effective speed (lights + dwell)
-  // ~10–12 km/h network speed after 1.7× detour on straight-line
-  let distMinutes = 12; // default when coords missing
-  if (!isZeroLocation(seg.fromStop.location) && !isZeroLocation(seg.toStop.location)) {
+  let ride: number;
+  if (hopSum != null) {
+    // Schedule hop-sum × mild real-world buffer
+    ride = Math.max(8, Math.ceil(hopSum * SCHEDULE_TO_REAL));
+  } else if (!isZeroLocation(seg.fromStop.location) && !isZeroLocation(seg.toStop.location)) {
     const distKm = haversineMeters(seg.fromStop.location, seg.toStop.location) / 1000;
-    const roadKm = distKm * 1.7;
-    distMinutes = Math.ceil(roadKm / 0.18); // 0.18 km/min ≈ 11 km/h
+    ride = endToEndBusMinutes(distKm);
+    method = 'end-to-end';
+  } else {
+    ride = 25;
+    method = 'default';
   }
-
-  // Stop-hop estimate: ~2.5 min per interval (move + dwell), +2 min buffer
-  const stopMinutes =
-    intervals != null ? Math.ceil(intervals * 2.5 + 2) : null;
-
-  // Combine: take the more conservative (larger) of available methods; floor 8′
-  const candidates = [distMinutes];
-  if (stopMinutes != null) candidates.push(stopMinutes);
-  const ride = Math.max(8, ...candidates);
 
   console.log(
-    `[Journey] Bus ride ${seg.route.name}: intervals=${intervals ?? '—'} ` +
-    `distMin=${distMinutes} stopMin=${stopMinutes ?? '—'} → ${ride}min`,
+    `[Journey] Bus ride ${seg.route.name}: method=${method} hops=${hopCount || '—'} ` +
+      `hopSum=${hopSum ?? '—'} → ${ride}min`,
   );
   return ride;
 }
 
 function isZeroLocation(loc: Location): boolean {
-  return loc.lat === 0 && loc.lng === 0;
+  return !loc || (loc.lat === 0 && loc.lng === 0);
 }
 
 export interface TransportETA {

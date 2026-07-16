@@ -819,12 +819,13 @@ function isGoingToward(
 }
 
 /**
- * Estimate bus ride time based on haversine distance.
- * Uses average bus speed of 18 km/h (0.3 km/min) with minimum 5 min.
+ * Estimate bus ride time based on haversine distance (alt-route scoring only).
+ * ~18 km/h road (1.35 detour / 0.3 km/min), floor 8′ — aligned with eta-service fallback.
+ * Full hop-sum lives in eta-service.estimateBusRideMinutes for journey timeline.
  */
 function estimateBusRideMinutes(from: Location, to: Location): number {
   const distKm = haversineMeters(from, to) / 1000;
-  return Math.max(5, Math.ceil(distKm / 0.3));
+  return Math.max(8, Math.ceil((distKm * 1.35) / 0.3));
 }
 
 /**

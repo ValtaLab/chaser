@@ -267,9 +267,9 @@ function estimateRideTime(segment: { route: { type: string }; fromStop: { locati
   if (isZero(segment.fromStop.location) || isZero(segment.toStop.location)) {
     return 30;  // Default bus ride time
   }
-  // Bus: estimate from distance
+  // Bus: ~18 km/h road (aligned with eta-service end-to-end fallback)
   const distKm = haversineMeters(segment.fromStop.location, segment.toStop.location) / 1000;
-  return Math.max(5, Math.ceil(distKm / 0.3));
+  return Math.max(8, Math.ceil((distKm * 1.35) / 0.3));
 }
 
 function findConnectingLines(fromStationCode: string, toStationCode: string): string[] {

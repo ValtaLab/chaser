@@ -2,12 +2,20 @@
 project: chaser
 name: 趕車 (Chaser)
 status: active
-last_deploy: 2026-07-15T15:10:00+08:00
-last_version: bus-map-bubbles
+last_deploy: 2026-07-16T07:30:00+08:00
+last_version: bus-hop-sum
 last_update_by: HermesBPi
 ---
 
 # 趕車 (Chaser) — 項目進展日誌
+
+
+### 2026-07-16 | 巴士車程改 hop-sum（USHB 式）
+**App + Worker** `bus-hop-sum`
+1. 舊：端到端 ×1.7÷11km/h 同站數×2.5 取大 → 307P 富蝶→天后 **~187–190′**（用戶實感 ~90′，USHB 編定 72′）
+2. 新：沿 route-stop **逐站距離計 hop 分鐘再加總**（校準 USHB 307P=72′），×1.15 現實緩衝 → **~82′**
+3. KMB 查站序試 service_type **1/2/3**（富蝶 307P = type 2）
+4. DO / alt-routes / smart-route fallback 改 ~18km/h（唔再 11km/h）
 
 
 ### 2026-07-15 | 誤報「尾班車已過」
