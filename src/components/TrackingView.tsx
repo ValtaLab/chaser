@@ -6,6 +6,7 @@ import { fetchETA, calculateTotalJourney, type TransportETA } from '@/lib/eta-se
 import { ChevronLeft } from 'lucide-react';
 import {
   findAlternativesForSegment,
+  detectLastServicePassed,
   type SegmentAlternatives,
 } from '@/lib/alternative-routes';
 import {
@@ -191,6 +192,67 @@ interface SegmentETAData {
   segmentId: string;
   label: string;
   etas: TransportETA[];
+}
+
+/** One operator route line (e.g. KMB 307P vs CTB 307P) for ETA panel rows */
+interface EtaRouteLine {
+  route: string;
+  company?: TransportETA['company'];
+  topEtas: TransportETA[];
+  remark?: string;
+}
+
+function groupEtasByRouteLine(etas: TransportETA[]): EtaRouteLine[] {
+  const byKey = new Map<string, TransportETA[]>();
+  for (const e of etas) {
+    const key = `${e.company ?? 'KMB'}:${e.route}`;
+    const list = byKey.get(key) ?? [];
+    list.push(e);
+    byKey.set(key, list);
+  }
+  return [...byKey.values()].map((list) => {
+    const sorted = [...list].sort((a, b) => a.minutesAway - b.minutesAway);
+    const valid = sorted.filter((e) => e.minutesAway >= 0);
+    const topEtas = valid.slice(0, 2);
+    const remarkEta =
+      valid.length === 0 ? sorted.find((e) => e.remark) ?? sorted[0] : undefined;
+    return {
+      route: list[0].route,
+      company: list[0].company,
+      topEtas,
+      remark: remarkEta?.remark,
+    };
+  });
+}
+
+/** When last bus: always list each operator line (KMB + joint CTB) with remark if no ETA */
+function ensureAllBusOperatorLines(
+  lines: EtaRouteLine[],
+  seg: CommuteSegment,
+  defaultRemark?: string,
+  includeCitybusTwin?: boolean,
+): EtaRouteLine[] {
+  const routeName = seg.route.name;
+  const primary: NonNullable<TransportETA['company']> =
+    seg.route.operator === 'citybus' ? 'CTB' : 'KMB';
+  const out = [...lines];
+  const lineKey = (company: TransportETA['company'] | undefined, route: string) =>
+    `${company ?? 'KMB'}:${route}`;
+  const keys = new Set(out.map((l) => lineKey(l.company, l.route)));
+
+  const addLine = (company: TransportETA['company'], remark?: string) => {
+    const k = lineKey(company, routeName);
+    if (keys.has(k)) return;
+    keys.add(k);
+    out.push({ route: routeName, company, topEtas: [], remark });
+  };
+
+  addLine(primary, defaultRemark);
+  if (primary === 'KMB' && includeCitybusTwin) {
+    const ctbRemark = out.find((l) => l.company === 'CTB')?.remark ?? defaultRemark;
+    addLine('CTB', ctbRemark);
+  }
+  return out;
 }
 
 // ─── Main Component ──────────────────────────────────────────────────
@@ -1205,12 +1267,75 @@ export default function TrackingView({
             // Show the 2 soonest arrivals (pure time-based)
             const topEtas = validEtas.slice(0, 2);
             const remarkEta = topEtas.length === 0 ? filteredEtas.find(e => e.remark) : null;
+            const { isLastServicePassed: isLastBusPassed } = detectLastServicePassed(
+              filteredEtas.map(e => ({ minutesAway: e.minutesAway, remark: e.remark })),
+              segData?.route.type ?? 'bus',
+            );
+            let routeLines: EtaRouteLine[] | null =
+              isLastBusPassed && segData?.route.type !== 'mtr'
+                ? groupEtasByRouteLine(filteredEtas)
+                : null;
+            if (isLastBusPassed && isMTR && filteredEtas.length > 0) {
+              routeLines = filteredEtas.map((e) => ({
+                route: e.destination,
+                company: undefined,
+                topEtas: e.minutesAway >= 0 ? [e] : [],
+                remark: e.remark,
+              }));
+            }
+            if (routeLines && routeLines.length === 0 && segData) {
+              routeLines.push({
+                route: segData.route.name,
+                company: segData.route.operator === 'citybus' ? 'CTB' : 'KMB',
+                topEtas: [],
+                remark: remarkEta?.remark,
+              });
+            }
+            if (routeLines && isLastBusPassed && segData?.route.type === 'bus') {
+              const jointCtb =
+                citybusRouteCacheRef.current.has(segData.route.name) ||
+                filteredEtas.some((e) => e.company === 'CTB');
+              routeLines = ensureAllBusOperatorLines(
+                routeLines,
+                segData,
+                remarkEta?.remark,
+                jointCtb,
+              );
+            }
             const borderColor =
               minEta !== null && minEta <= 2
                 ? 'border-red-500/50'
                 : minEta !== null && minEta <= 5
                   ? 'border-yellow-500/50'
+                  : isLastBusPassed
+                    ? 'border-amber-500/40'
                   : 'border-slate-600/40';
+
+            const renderLineEta = (line: EtaRouteLine) => (
+              <div key={`${line.company}-${line.route}`} className="flex items-center justify-between gap-1">
+                <span className="text-[9px] font-medium text-gray-300 truncate">
+                  {line.company === 'CTB' ? (
+                    <span className="text-yellow-400 font-bold mr-0.5">C</span>
+                  ) : line.company === 'KMB' || (line.company === undefined && !isMTR) ? (
+                    <span className="text-red-400 font-bold mr-0.5">K</span>
+                  ) : null}
+                  {line.route}
+                </span>
+                {line.topEtas.length > 0 ? (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {line.topEtas.map((eta, i) => (
+                      <span key={i} className={`text-[10px] font-bold ${getEtaColor(eta.minutesAway)}`}>
+                        {eta.minutesAway === 0 ? '到站' : `${eta.minutesAway}'`}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-[8px] text-gray-500 italic shrink-0 text-right max-w-[120px] truncate">
+                    {line.remark || '—'}
+                  </span>
+                )}
+              </div>
+            );
 
             return (
               <div key={seg.segmentId} className={`rounded-xl border px-2 py-1.5 bg-slate-700/40 ${borderColor}`}>
@@ -1218,7 +1343,7 @@ export default function TrackingView({
                   <span className="text-[9px] font-medium text-gray-200 truncate">
                     {isMTR ? '🚇' : '🚌'} {seg.label}
                   </span>
-                  {topEtas.length > 0 ? (
+                  {!routeLines && topEtas.length > 0 ? (
                     <div className="flex items-center gap-1.5">
                       {topEtas.map((eta, i) => (
                         <span key={i} className="flex items-center gap-0.5">
@@ -1233,15 +1358,25 @@ export default function TrackingView({
                         </span>
                       ))}
                     </div>
-                  ) : remarkEta ? (
+                  ) : !routeLines && remarkEta ? (
                     <span className="text-[8px] text-gray-500 italic">
                       {remarkEta.remark || '—'}
                     </span>
-                  ) : (
+                  ) : !routeLines ? (
                     <span className="text-[8px] text-gray-500">無</span>
-                  )}
+                  ) : null}
                 </div>
-                {minEta !== null && minEta <= 2 && (
+                {routeLines && routeLines.length > 0 && (
+                  <div className="mt-1 space-y-0.5 border-t border-slate-600/30 pt-1">
+                    {routeLines.map(renderLineEta)}
+                  </div>
+                )}
+                {isLastBusPassed && (
+                  <p className="text-[8px] text-amber-300/95 mt-1 font-medium">
+                    ⚠️ 尾班車已過
+                  </p>
+                )}
+                {!isLastBusPassed && minEta !== null && minEta <= 2 && (
                   <p className="text-[8px] text-red-300 mt-0.5 font-medium">
                     🏃 趕快！
                   </p>
@@ -1327,16 +1462,6 @@ export default function TrackingView({
             {/* Alternative Route Cards — right-aligned, above timeline */}
             {alternatives.length > 0 && (
               <div className="self-end flex flex-col gap-2 pointer-events-auto" style={{ maxWidth: 280 }}>
-                {/* Consolidated "last bus passed" warning — show once, not per segment */}
-                {alternatives.some(s => s.isLastBusPassed) && (
-                  <div className="bg-slate-800/80 border border-amber-500/30 rounded-2xl px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-amber-400 text-sm">⚠️</span>
-                      <span className="text-xs font-medium text-amber-300">所選路線尾班車已過</span>
-                    </div>
-                  </div>
-                )}
-                {/* Individual alternative cards */}
                 {alternatives.filter(s => s.alternatives.length > 0).map((seg) => (
                   <AlternativeRouteCard
                     key={seg.segmentId}

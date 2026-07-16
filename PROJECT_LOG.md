@@ -10,6 +10,13 @@ last_update_by: HermesBPi
 # 趕車 (Chaser) — 項目進展日誌
 
 
+### 2026-07-17 | Tracking ETA 尾班車 UI
+**App** `TrackingView.tsx`
+1. 右上角 ETA 卡：尾班車時仍逐條顯示 K/C（或 MTR 方向），每線顯示 remark；段底統一「⚠️ 尾班車已過」
+2. 聯營線補齊：`ensureAllBusOperatorLines`（KMB 主線 + 已知 CTB 雙營）
+3. 移除右下角「所選路線尾班車已過」重複橫幅（改由 ETA 卡提示）
+
+
 ### 2026-07-16 | 巴士車程改 hop-sum（USHB 式）
 **App + Worker** `bus-hop-sum`
 1. 舊：端到端 ×1.7÷11km/h 同站數×2.5 取大 → 307P 富蝶→天后 **~187–190′**（用戶實感 ~90′，USHB 編定 72′）
