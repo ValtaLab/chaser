@@ -166,6 +166,27 @@ function sendNotification(title: string, options: { body: string; tag: string; s
   } catch {/* silent fail */}
 }
 
+/** After user taps「我已上車」, force riding UI even if GPS still near stop. */
+function applyManualBoardOverride(
+  mid: MidJourneyState | null,
+  boarded: Set<number>,
+): MidJourneyState | null {
+  if (!mid || boarded.size === 0) return mid;
+  if (
+    boarded.has(mid.segmentIndex) &&
+    !mid.alreadyOnBoard &&
+    mid.etaSegmentIndex === mid.segmentIndex
+  ) {
+    return {
+      ...mid,
+      alreadyOnBoard: true,
+      etaSegmentIndex: null,
+      remainingFraction: Math.max(0.05, mid.remainingFraction),
+    };
+  }
+  return mid;
+}
+
 // ─── Dynamically import entire map (avoids SSR + leaflet CSS issues) ──
 const MapView = dynamic(() => import('./MapView'), {
   ssr: false,
@@ -299,12 +320,18 @@ export default function TrackingView({
   const [enrichmentDone, setEnrichmentDone] = useState(false);
   /** GPS already mid-route when journey starts — skip boarding for that segment */
   const [midJourney, setMidJourney] = useState<MidJourneyState | null>(null);
+  /** User-confirmed boarded segment indices — DO onBoard only after this (no auto board) */
+  const [manualBoarded, setManualBoarded] = useState<Set<number>>(() => new Set());
+  const manualBoardedRef = useRef<Set<number>>(new Set());
+  const [boardSubmitting, setBoardSubmitting] = useState(false);
   /** Last phase key pushed to DO — resync when segment phase changes */
   const lastDoPhaseRef = useRef<string>('');
   // Reset DO sync guard when route changes
   useEffect(() => {
     lastDoPhaseRef.current = '';
     setMidJourney(null);
+    setManualBoarded(new Set());
+    manualBoardedRef.current = new Set();
   }, [route.id]);
   const addDebug = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -495,16 +522,18 @@ export default function TrackingView({
   // ── Continuous mid-journey phase (ETA filter + estimate + DO resync) ──
   useEffect(() => {
     if (!liveLocation || routePolylines.length === 0) return;
-    const mid = detectMidJourney(liveLocation, routePolylines);
+    const raw = detectMidJourney(liveLocation, routePolylines);
+    const mid = applyManualBoardOverride(raw, manualBoardedRef.current);
     setMidJourney(mid);
     if (mid) {
       addDebug(
         `📍 phase: seg${mid.segmentIndex} ${mid.alreadyOnBoard ? 'riding' : 'wait'} ` +
         `etaSeg=${mid.etaSegmentIndex ?? '—'} f=${(mid.fraction * 100).toFixed(0)}% ` +
-        `off=${Math.round(mid.distToPolylineM)}m`,
+        `off=${Math.round(mid.distToPolylineM)}m` +
+        (manualBoardedRef.current.has(mid.segmentIndex) ? ' ✓user' : ''),
       );
     }
-  }, [liveLocation, routePolylines, addDebug]);
+  }, [liveLocation, routePolylines, addDebug, manualBoarded]);
 
   // Then: refine with GPS and real walk/ride calculations (+ mid-journey skip)
   useEffect(() => {
@@ -1099,16 +1128,19 @@ export default function TrackingView({
       };
 
       // Mid-journey / transfer: skip boarding for active segment, mark prior complete
+      // riding=true ONLY if user confirmed「我已上車」for that segment (no GPS auto-board)
       if (mid && (mid.alreadyOnBoard || mid.completedBefore.length > 0 || mid.segmentIndex > 0)) {
+        const userRiding =
+          mid.alreadyOnBoard && manualBoardedRef.current.has(mid.segmentIndex);
         body.alreadyOnBoard = {
           segmentIndex: mid.segmentIndex,
-          remainingFraction: mid.alreadyOnBoard ? mid.remainingFraction : 1,
+          remainingFraction: userRiding ? mid.remainingFraction : 1,
           completedBefore: mid.completedBefore,
-          riding: mid.alreadyOnBoard,
+          riding: userRiding,
         };
         addDebug(
           `🔔 DO ${isResync ? 'resync' : 'start'} phase=${phaseKey} seg${mid.segmentIndex} ` +
-          `${mid.alreadyOnBoard ? 'ride' : 'wait'} remain=${(mid.remainingFraction * 100).toFixed(0)}%`,
+          `${userRiding ? 'ride(user)' : mid.alreadyOnBoard ? 'gps-ride→wait' : 'wait'} remain=${(mid.remainingFraction * 100).toFixed(0)}%`,
         );
       }
 
@@ -1141,7 +1173,10 @@ export default function TrackingView({
       const hasPoly = routePolylines.length > 0;
       const hasGps = !!liveLocation;
       if (hasPoly && hasGps) {
-        const mid = detectMidJourney(liveLocation!, routePolylines);
+        const mid = applyManualBoardOverride(
+          detectMidJourney(liveLocation!, routePolylines),
+          manualBoardedRef.current,
+        );
         if (mid) setMidJourney(mid);
         const key = midJourneyKey(mid);
         const isResync = lastDoPhaseRef.current !== '' && lastDoPhaseRef.current !== key;
@@ -1157,7 +1192,10 @@ export default function TrackingView({
       if (lastDoPhaseRef.current === '') {
         const mid =
           liveLocation && routePolylines.length > 0
-            ? detectMidJourney(liveLocation, routePolylines)
+            ? applyManualBoardOverride(
+                detectMidJourney(liveLocation, routePolylines),
+                manualBoardedRef.current,
+              )
             : null;
         if (mid) setMidJourney(mid);
         void startDo(mid, midJourneyKey(mid), false);
@@ -1180,6 +1218,96 @@ export default function TrackingView({
     } catch {}
     fetch(`${WORKER_URL}/journey/end`, { method: 'POST', headers: endHeaders }).catch(() => {});
   }, []);
+
+  /** Segment index for「我已上車」— null when nothing left to confirm */
+  const boardTargetIdx = useMemo(() => {
+    const n = route.segments.length;
+    if (n === 0) return null;
+    if (midJourney) {
+      // Mid-ride GPS without user confirm → still ask for that segment
+      if (midJourney.alreadyOnBoard && midJourney.etaSegmentIndex === null) {
+        if (manualBoarded.has(midJourney.segmentIndex)) return null;
+        return midJourney.segmentIndex;
+      }
+      const cand =
+        midJourney.etaSegmentIndex != null
+          ? midJourney.etaSegmentIndex
+          : midJourney.segmentIndex;
+      if (cand >= 0 && cand < n && !manualBoarded.has(cand)) return cand;
+      return null;
+    }
+    for (let i = 0; i < n; i++) {
+      if (!manualBoarded.has(i)) return i;
+    }
+    return null;
+  }, [midJourney, manualBoarded, route.segments.length]);
+
+  const boardButtonLabel = useMemo(() => {
+    if (boardTargetIdx == null) return '';
+    const seg = route.segments[boardTargetIdx];
+    if (!seg) return '我已上車';
+    const name =
+      seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name;
+    return `我已上車（${name}）`;
+  }, [boardTargetIdx, route.segments]);
+
+  const confirmBoarded = useCallback(async () => {
+    if (boardTargetIdx == null || boardSubmitting) return;
+    const idx = boardTargetIdx;
+    setBoardSubmitting(true);
+    try {
+      const next = new Set(manualBoardedRef.current);
+      next.add(idx);
+      manualBoardedRef.current = next;
+      setManualBoarded(next);
+
+      setMidJourney((prev) => {
+        const base: MidJourneyState = prev ?? {
+          alreadyOnBoard: true,
+          segmentIndex: idx,
+          fraction: 0.1,
+          remainingFraction: 0.9,
+          distToPolylineM: 0,
+          distToEndM: 9999,
+          completedBefore: Array.from({ length: idx }, (_, k) => k),
+          etaSegmentIndex: null,
+          nearAlight: false,
+        };
+        return {
+          ...base,
+          alreadyOnBoard: true,
+          segmentIndex: idx,
+          etaSegmentIndex: null,
+          completedBefore: Array.from({ length: idx }, (_, k) => k),
+          remainingFraction: Math.max(0.05, base.remainingFraction),
+        };
+      });
+      // Allow DO resync with riding=true for this segment
+      lastDoPhaseRef.current = '';
+
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      try {
+        const stored = localStorage.getItem('chaser_auth');
+        if (stored) headers['Authorization'] = `Bearer ${JSON.parse(stored).token}`;
+      } catch { /* guest ok */ }
+
+      const res = await fetch(`${WORKER_URL}/journey/board`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ segmentIndex: idx }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && (data as { ok?: boolean }).ok !== false) {
+        addDebug(`✅ 我已上車 seg${idx}: ${JSON.stringify(data).slice(0, 120)}`);
+      } else {
+        addDebug(`⚠️ board API ${res.status}: ${JSON.stringify(data).slice(0, 120)}`);
+      }
+    } catch (e) {
+      addDebug(`⚠️ board network: ${e}`);
+    } finally {
+      setBoardSubmitting(false);
+    }
+  }, [boardTargetIdx, boardSubmitting, addDebug]);
 
   // ── ETA urgency helpers ─────────────────────────────────────────
   const getEtaColor = (min: number) => {
@@ -1533,19 +1661,31 @@ export default function TrackingView({
 
         {/* Bottom bar */}
         <div className="bg-slate-800/90 border-t border-slate-700/60 px-4 py-3 safe-area-bottom">
-          <div className="flex items-center justify-between max-w-md mx-auto">
+          <div className="flex items-center justify-between gap-2 max-w-md mx-auto">
             <div className="flex-1 min-w-0">
               <p className="text-xs text-gray-400">
                 {route.direction === 'to_work' ? '🏢 返工' : '🏠 放工'} · {route.segments.length} 段
               </p>
               <p className="text-sm text-white truncate">{routeSummary}</p>
             </div>
-            <button
-              onClick={() => { endBackgroundJourney(); onEndJourney(); }}
-              className="shrink-0 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-medium text-sm px-5 py-2.5 rounded-lg transition-colors shadow-lg shadow-red-600/30"
-            >
-              結束旅程
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {boardTargetIdx != null && (
+                <button
+                  type="button"
+                  disabled={boardSubmitting}
+                  onClick={() => { void confirmBoarded(); }}
+                  className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-60 text-white font-medium text-sm px-3.5 py-2.5 rounded-lg transition-colors shadow-lg shadow-emerald-600/25 max-w-[11.5rem] leading-tight text-center"
+                >
+                  {boardSubmitting ? '提交中…' : boardButtonLabel}
+                </button>
+              )}
+              <button
+                onClick={() => { endBackgroundJourney(); onEndJourney(); }}
+                className="bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-medium text-sm px-4 py-2.5 rounded-lg transition-colors shadow-lg shadow-red-600/30"
+              >
+                結束旅程
+              </button>
+            </div>
           </div>
         </div>
       </div>

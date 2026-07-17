@@ -9,6 +9,15 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-17 | 我已上車（手動確認，停 auto board）
+**App + Worker** `manual-board-20260717`
+1. **問題**：ETA jump / 12′ time fallback / GPS riding 會誤 push「已上 xxx」但人仲喺站
+2. **DO**：移除 auto-board；新增 `POST /board` → `markBoarded`
+3. **Worker**：`POST /journey/board`；health `manual-board-20260717`
+4. **UI**：底部 bar 綠掣 `我已上車（307P）`（路線名動態）；只等人撳先 `onBoard`
+5. GPS 仍可做時間軸／UI phase，但 **唔再** 自動令 DO riding
+
+
 
 ### 2026-07-17 | 港鐵停運仍顯示 205′ 假 ETA
 **App** `alternative-routes.ts` `detectLastServicePassed`
