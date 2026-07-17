@@ -9,6 +9,10 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-17 | 小巴線 OSRM 亂繞
+**App** SW v15 — GMB 唔 snap OSRM；用完整站序座標；循環線 wrap；HKI 優先
+
+
 ### 2026-07-17 | Tracking 小巴路線唔畫
 **App** `findGMBPathBetweenStops` + SW v14
 1. 根因：fetchRoutePaths 只處理 MTR/KMB/CTB；minibus 落到 0,0 直線

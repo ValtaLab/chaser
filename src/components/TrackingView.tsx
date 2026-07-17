@@ -746,14 +746,18 @@ export default function TrackingView({
       if (!cancelled) {
         addDebug(`🗺️ snapping ${polylines.length} polylines to roads...`);
         
-        // Snap each segment to roads (skip MTR which already has accurate coords)
+        // Snap each segment to roads (skip MTR + GMB — official stop coords are better;
+        // OSRM on sparse hilly points draws wild loops e.g. HKI 23 circular)
         const snappedPolylines: Location[][] = [];
         for (let i = 0; i < polylines.length; i++) {
-          const segType = route.segments[i]?.route.type;
+          const seg = route.segments[i];
+          const segType = seg?.route.type;
+          const isGMB = segType === 'minibus' || seg?.route.operator === 'gmb';
           const poly = polylines[i];
           
-          if (segType === 'mtr' || poly.length < 2) {
+          if (segType === 'mtr' || isGMB || poly.length < 2) {
             snappedPolylines.push(poly);
+            if (isGMB) addDebug(`  seg ${i}: GMB skip OSRM (${poly.length} stop pts)`);
           } else {
             try {
               const snapped = await snapToRoads(poly);
