@@ -239,16 +239,28 @@ export interface TransportETA {
   company?: 'KMB' | 'CTB';
 }
 
+/** App stores `minibus`; ETA layer uses `gmb`. */
+export function normalizeTransportType(
+  t: string | undefined | null,
+): 'bus' | 'mtr' | 'gmb' | 'tram' {
+  if (t === 'mtr') return 'mtr';
+  if (t === 'tram') return 'tram';
+  if (t === 'gmb' || t === 'minibus') return 'gmb';
+  return 'bus';
+}
+
 // Single stop ETA fetch (auto-detects transport type)
 export async function fetchETA(
   stopId: string,
-  transportType: 'bus' | 'mtr' | 'gmb' | 'tram',
+  transportType: 'bus' | 'mtr' | 'gmb' | 'tram' | 'minibus',
   company: 'KMB' | 'CTB' = 'KMB',
   route?: string,
   lineCode?: string
 ): Promise<TransportETA[]> {
+  const kind = normalizeTransportType(transportType);
+
   // MTR
-  if (transportType === 'mtr' && lineCode) {
+  if (kind === 'mtr' && lineCode) {
     const mtrETAs = await getMTRETA(lineCode, stopId);
     return mtrETAs
       .filter(t => t.ttnt && t.ttnt !== '-' && t.ttnt !== '')
@@ -262,20 +274,22 @@ export async function fetchETA(
       .sort((a, b) => a.minutesAway - b.minutesAway);
   }
 
-  // GMB (Green Minibus)
-  if (transportType === 'gmb') {
-    const gmbETAs = await getGMBStopETASummary(parseInt(stopId), route);
+  // GMB (Green Minibus) — route.type is often `minibus`
+  if (kind === 'gmb') {
+    const sid = parseInt(String(stopId), 10);
+    if (!Number.isFinite(sid)) return [];
+    const gmbETAs = await getGMBStopETASummary(sid, route);
     return gmbETAs.map(eta => ({
       type: 'gmb' as const,
       route: eta.route,
-      destination: eta.destination,
+      destination: eta.destination || route || '小巴',
       minutesAway: eta.minutesAway,
       remark: eta.remark,
     }));
   }
 
   // Tram (static schedule)
-  if (transportType === 'tram') {
+  if (kind === 'tram') {
     const tramETAs = getEstimatedTramTime();
     return tramETAs
       .filter(t => t.minutesAway >= 0)

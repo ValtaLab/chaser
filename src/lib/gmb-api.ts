@@ -100,15 +100,28 @@ export async function getGMBStopETASummary(
   routeCode?: string
 ): Promise<GMBStopETAInfo[]> {
   const etas = await getGMBStopETA(stopId);
-  const now = new Date();
+  // Optional: filter to this route only (ETA payload uses route_id, not code)
+  let filterRouteId: number | null = null;
+  if (routeCode) {
+    for (const region of ['HKI', 'KLN', 'NT'] as const) {
+      try {
+        const routes = await getGMBRouteInfo(region, routeCode);
+        if (routes[0]?.route_id) {
+          filterRouteId = routes[0].route_id;
+          break;
+        }
+      } catch { /* try next region */ }
+    }
+  }
 
   const results: GMBStopETAInfo[] = [];
 
   for (const entry of etas) {
     if (!entry.enabled || !entry.eta?.length) continue;
+    if (filterRouteId != null && entry.route_id !== filterRouteId) continue;
 
     for (const eta of entry.eta) {
-      if (eta.diff == null) continue;
+      if (eta.diff == null || Number.isNaN(eta.diff)) continue;
       results.push({
         route: routeCode || `Route ${entry.route_id}`,
         destination: '',

@@ -9,6 +9,14 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-17 | 小巴 ETA 缺失
+**App + Worker** `gmb-eta-20260717`
+1. 根因：`route.type=minibus` 被當 bus 打 KMB/CTB，GMB stop id 無效
+2. `fetchETA` / TrackingView 正規化 `minibus|gmb` → data.etagmb.gov.hk
+3. 按 route_code 過濾 route_id；UI 🚐 + G 標記
+4. JourneyDO 後台 approach 亦支援 GMB ETA
+
+
 ### 2026-07-17 | 我已上車狀態重入丟失 → 誤顯示 72K
 **App** sessionStorage 持久化 `chaser-boarded:{routeId}`
 1. 根因：manualBoarded 只在 React state，退後台 remount 清空 → 第一程 72K 再出

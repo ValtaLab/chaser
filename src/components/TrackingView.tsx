@@ -877,7 +877,8 @@ export default function TrackingView({
     try {
       const results: SegmentETAData[] = await Promise.all(
         route.segments.map(async (seg) => {
-          const routeType = seg.route.type as 'bus' | 'mtr' | 'gmb' | 'tram';
+          // App stores minibus; fetchETA accepts gmb|minibus (normalize inside)
+          const routeType = seg.route.type as 'bus' | 'mtr' | 'gmb' | 'tram' | 'minibus';
           const company =
             seg.route.operator === 'citybus' ? 'CTB' : 'KMB';
 
@@ -889,23 +890,31 @@ export default function TrackingView({
             const fromSt = findStation(seg.fromStop.id) || findStation(seg.fromStop.nameZh || seg.fromStop.name);
             const toSt = findStation(seg.toStop.id) || findStation(seg.toStop.nameZh || seg.toStop.name);
             addDebug(`🚇 MTR ${lineCode}: from=${seg.fromStop.id}→${fromSt?.stationCode||'??'} to=${seg.toStop.id}→${toSt?.stationCode||'??'}`);
+          } else if (routeType === 'minibus' || routeType === 'gmb' || seg.route.operator === 'gmb') {
+            addDebug(`🚐 GMB ${seg.route.name}: stop=${stopId}`);
           }
 
           try {
             const etas = await fetchETA(
               stopId,
-              routeType,
+              // minibus must not fall through as bus (KMB/CTB)
+              routeType === 'minibus' || seg.route.operator === 'gmb' ? 'gmb' : routeType,
               company as 'KMB' | 'CTB',
               seg.route.name,
               lineCode
             );
+
+            if ((routeType === 'minibus' || routeType === 'gmb' || seg.route.operator === 'gmb') && etas.length === 0) {
+              addDebug(`🚐 GMB ${seg.route.name}: 0 ETA (stop=${stopId})`);
+            }
 
             return {
               segmentId: seg.id,
               label: `${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name} · ${seg.fromStop.nameZh || seg.fromStop.name}`,
               etas,
             };
-          } catch {
+          } catch (err) {
+            addDebug(`⚠️ ETA fail ${seg.route.name}: ${err instanceof Error ? err.message : String(err)}`);
             return {
               segmentId: seg.id,
               label: `${seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name} · ${seg.fromStop.nameZh || seg.fromStop.name}`,
@@ -1080,13 +1089,13 @@ export default function TrackingView({
         addDebug(`🔀 transfer proximity: ${currentSeg.toStop.nameZh} dist=${Math.round(distance)}m`);
 
         // Fetch ETA for next segment's boarding stop
-        const nextRouteType = nextSeg.route.type as 'bus' | 'mtr' | 'gmb' | 'tram';
+        const nextRouteType = nextSeg.route.type as 'bus' | 'mtr' | 'gmb' | 'tram' | 'minibus';
         const nextCompany = nextSeg.route.operator === 'citybus' ? 'CTB' : 'KMB';
         const nextLineCode = nextRouteType === 'mtr' ? nextSeg.route.name : undefined;
 
         fetchETA(
           nextSeg.fromStop.id,
-          nextRouteType,
+          nextRouteType === 'minibus' || nextSeg.route.operator === 'gmb' ? 'gmb' : nextRouteType,
           nextCompany,
           nextSeg.route.name,
           nextLineCode,
@@ -1581,7 +1590,27 @@ export default function TrackingView({
                   hasJointCtb,
                 );
               }
+            } else if (
+              segData?.route.type === 'minibus' ||
+              segData?.route.type === 'gmb' ||
+              segData?.route.operator === 'gmb' ||
+              filteredEtas.some((e) => e.type === 'gmb')
+            ) {
+              if (filteredEtas.length > 0 || remarkEta) {
+                routeLines = [
+                  {
+                    route: segData?.route.name || '小巴',
+                    company: undefined,
+                    topEtas: validEtas.slice(0, 2),
+                    remark: remarkEta?.remark,
+                  },
+                ];
+              }
             }
+            const isGMB =
+              segData?.route.type === 'minibus' ||
+              segData?.route.type === 'gmb' ||
+              segData?.route.operator === 'gmb';
             const borderColor =
               minEta !== null && minEta <= 2
                 ? 'border-red-500/50'
@@ -1596,7 +1625,11 @@ export default function TrackingView({
                 <span className="text-[9px] font-medium text-gray-300 truncate">
                   {line.company === 'CTB' ? (
                     <span className="text-yellow-400 font-bold mr-0.5">C</span>
-                  ) : line.company === 'KMB' || (line.company === undefined && !isMTR) ? (
+                  ) : line.company === 'KMB' ? (
+                    <span className="text-red-400 font-bold mr-0.5">K</span>
+                  ) : isGMB || (!isMTR && line.company === undefined && filteredEtas.some(e => e.type === 'gmb')) ? (
+                    <span className="text-emerald-400 font-bold mr-0.5">G</span>
+                  ) : !isMTR && line.company === undefined ? (
                     <span className="text-red-400 font-bold mr-0.5">K</span>
                   ) : null}
                   {line.route}
@@ -1621,7 +1654,7 @@ export default function TrackingView({
               <div key={seg.segmentId} className={`rounded-xl border px-2 py-1.5 bg-slate-700/40 ${borderColor}`}>
                 <div className="flex items-center justify-between">
                   <span className="text-[9px] font-medium text-gray-200 truncate">
-                    {isMTR ? '🚇' : '🚌'} {seg.label}
+                    {isMTR ? '🚇' : isGMB ? '🚐' : '🚌'} {seg.label}
                   </span>
                   {!routeLines && topEtas.length > 0 ? (
                     <div className="flex items-center gap-1.5">
