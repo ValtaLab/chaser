@@ -172,6 +172,8 @@ function applyManualBoardOverride(
   boarded: Set<number>,
 ): MidJourneyState | null {
   if (!mid || boarded.size === 0) return mid;
+  const maxBoarded = Math.max(...boarded);
+  // GPS still thinks waiting on a segment user already confirmed
   if (
     boarded.has(mid.segmentIndex) &&
     !mid.alreadyOnBoard &&
@@ -184,7 +186,62 @@ function applyManualBoardOverride(
       remainingFraction: Math.max(0.05, mid.remainingFraction),
     };
   }
+  // GPS snapped to an earlier segment user already finished — stick to highest boarded ride
+  if (mid.segmentIndex < maxBoarded && !mid.nearAlight) {
+    return {
+      alreadyOnBoard: true,
+      segmentIndex: maxBoarded,
+      fraction: Math.max(mid.fraction, 0.15),
+      remainingFraction: 0.85,
+      distToPolylineM: mid.distToPolylineM,
+      distToEndM: mid.distToEndM,
+      completedBefore: Array.from({ length: maxBoarded }, (_, k) => k),
+      etaSegmentIndex: null,
+      nearAlight: false,
+    };
+  }
   return mid;
+}
+
+const BOARD_STORAGE_PREFIX = 'chaser-boarded:';
+
+function loadManualBoarded(routeId: string): Set<number> {
+  if (typeof window === 'undefined' || !routeId) return new Set();
+  try {
+    const raw = sessionStorage.getItem(BOARD_STORAGE_PREFIX + routeId);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(
+      arr.filter((n): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function saveManualBoarded(routeId: string, boarded: Set<number>) {
+  if (typeof window === 'undefined' || !routeId) return;
+  try {
+    sessionStorage.setItem(
+      BOARD_STORAGE_PREFIX + routeId,
+      JSON.stringify([...boarded].sort((a, b) => a - b)),
+    );
+  } catch { /* private mode */ }
+}
+
+function clearManualBoarded(routeId: string) {
+  if (typeof window === 'undefined' || !routeId) return;
+  try {
+    sessionStorage.removeItem(BOARD_STORAGE_PREFIX + routeId);
+  } catch { /* */ }
+}
+
+/** Boarding seg idx also completes all earlier legs (can't board ISL without finishing 72K/EAL). */
+function withPriorSegmentsBoarded(boarded: Set<number>, idx: number): Set<number> {
+  const next = new Set(boarded);
+  for (let i = 0; i <= idx; i++) next.add(i);
+  return next;
 }
 
 // ─── Dynamically import entire map (avoids SSR + leaflet CSS issues) ──
@@ -321,17 +378,18 @@ export default function TrackingView({
   /** GPS already mid-route when journey starts — skip boarding for that segment */
   const [midJourney, setMidJourney] = useState<MidJourneyState | null>(null);
   /** User-confirmed boarded segment indices — DO onBoard only after this (no auto board) */
-  const [manualBoarded, setManualBoarded] = useState<Set<number>>(() => new Set());
-  const manualBoardedRef = useRef<Set<number>>(new Set());
+  const [manualBoarded, setManualBoarded] = useState<Set<number>>(() => loadManualBoarded(route.id));
+  const manualBoardedRef = useRef<Set<number>>(loadManualBoarded(route.id));
   const [boardSubmitting, setBoardSubmitting] = useState(false);
   /** Last phase key pushed to DO — resync when segment phase changes */
   const lastDoPhaseRef = useRef<string>('');
-  // Reset DO sync guard when route changes
+  // Reset DO sync guard when route changes; restore boarded set from sessionStorage
   useEffect(() => {
     lastDoPhaseRef.current = '';
     setMidJourney(null);
-    setManualBoarded(new Set());
-    manualBoardedRef.current = new Set();
+    const restored = loadManualBoarded(route.id);
+    setManualBoarded(restored);
+    manualBoardedRef.current = restored;
   }, [route.id]);
   const addDebug = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -339,6 +397,14 @@ export default function TrackingView({
     console.log(line);
     setDebugLogs(prev => [...prev.slice(-30), line]);
   }, []);
+
+  // Persist boarded set across background → remount (sessionStorage)
+  useEffect(() => {
+    if (manualBoarded.size > 0) {
+      saveManualBoarded(route.id, manualBoarded);
+      addDebug(`💾 boarded saved: [${[...manualBoarded].sort((a, b) => a - b).join(',')}]`);
+    }
+  }, [manualBoarded, route.id, addDebug]);
 
   // ── Enrich segments with coordinates (fix zero-coord routes) ───────
   useEffect(() => {
@@ -1211,35 +1277,85 @@ export default function TrackingView({
 
   // Explicit journey end helper used by 結束旅程
   const endBackgroundJourney = useCallback(() => {
+    clearManualBoarded(route.id);
+    manualBoardedRef.current = new Set();
+    setManualBoarded(new Set());
     const endHeaders: Record<string, string> = {};
     try {
       const stored = localStorage.getItem('chaser_auth');
       if (stored) endHeaders['Authorization'] = `Bearer ${JSON.parse(stored).token}`;
     } catch {}
     fetch(`${WORKER_URL}/journey/end`, { method: 'POST', headers: endHeaders }).catch(() => {});
-  }, []);
+  }, [route.id]);
 
-  /** Segment index for「我已上車」— null when nothing left to confirm */
+  /**
+   * Next「我已上車」target:
+   * - Sequential: first segment not yet user-confirmed
+   * - While riding a confirmed leg (and not near transfer), hide button
+   * - Near alight / transfer → next unconfirmed leg
+   */
   const boardTargetIdx = useMemo(() => {
     const n = route.segments.length;
     if (n === 0) return null;
-    if (midJourney) {
-      // Mid-ride GPS without user confirm → still ask for that segment
-      if (midJourney.alreadyOnBoard && midJourney.etaSegmentIndex === null) {
-        if (manualBoarded.has(midJourney.segmentIndex)) return null;
-        return midJourney.segmentIndex;
-      }
-      const cand =
-        midJourney.etaSegmentIndex != null
-          ? midJourney.etaSegmentIndex
-          : midJourney.segmentIndex;
-      if (cand >= 0 && cand < n && !manualBoarded.has(cand)) return cand;
-      return null;
-    }
+
+    let firstOpen: number | null = null;
     for (let i = 0; i < n; i++) {
-      if (!manualBoarded.has(i)) return i;
+      if (!manualBoarded.has(i)) {
+        firstOpen = i;
+        break;
+      }
     }
-    return null;
+    if (firstOpen === null) return null; // all legs confirmed
+
+    const maxBoarded =
+      manualBoarded.size > 0 ? Math.max(...manualBoarded) : -1;
+
+    // Riding confirmed leg → hide until transfer window
+    if (midJourney) {
+      const ridingConfirmed =
+        midJourney.alreadyOnBoard &&
+        midJourney.etaSegmentIndex === null &&
+        manualBoarded.has(midJourney.segmentIndex);
+
+      if (ridingConfirmed && !midJourney.nearAlight) {
+        return null;
+      }
+      // Near alight on confirmed ride → next open leg (usually firstOpen)
+      if (midJourney.nearAlight && manualBoarded.has(midJourney.segmentIndex)) {
+        const next = midJourney.segmentIndex + 1;
+        if (next < n && !manualBoarded.has(next)) return next;
+      }
+      // Waiting at a stop for an open leg
+      if (
+        midJourney.etaSegmentIndex != null &&
+        !manualBoarded.has(midJourney.etaSegmentIndex)
+      ) {
+        // Don't offer earlier legs than GPS wait if user already boarded later
+        // (shouldn't happen if we mark 0..idx); still prefer sequential firstOpen
+        if (midJourney.etaSegmentIndex >= firstOpen) {
+          return midJourney.etaSegmentIndex;
+        }
+      }
+    }
+
+    // If user already boarded up to maxBoarded, next is maxBoarded+1 (same as firstOpen)
+    if (maxBoarded >= 0 && firstOpen === maxBoarded + 1) {
+      // Only show next board when GPS says waiting on that leg or no GPS phase
+      if (
+        !midJourney ||
+        midJourney.etaSegmentIndex === firstOpen ||
+        (!midJourney.alreadyOnBoard && midJourney.segmentIndex === firstOpen) ||
+        midJourney.nearAlight
+      ) {
+        return firstOpen;
+      }
+      // Still mid-ride previous without nearAlight flag — hide
+      if (midJourney.alreadyOnBoard && midJourney.segmentIndex === maxBoarded) {
+        return null;
+      }
+    }
+
+    return firstOpen;
   }, [midJourney, manualBoarded, route.segments.length]);
 
   const boardButtonLabel = useMemo(() => {
@@ -1256,10 +1372,11 @@ export default function TrackingView({
     const idx = boardTargetIdx;
     setBoardSubmitting(true);
     try {
-      const next = new Set(manualBoardedRef.current);
-      next.add(idx);
+      // Confirm this leg + all earlier legs (skipped confirm still counts as done)
+      const next = withPriorSegmentsBoarded(manualBoardedRef.current, idx);
       manualBoardedRef.current = next;
       setManualBoarded(next);
+      saveManualBoarded(route.id, next);
 
       setMidJourney((prev) => {
         const base: MidJourneyState = prev ?? {
@@ -1298,7 +1415,7 @@ export default function TrackingView({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && (data as { ok?: boolean }).ok !== false) {
-        addDebug(`✅ 我已上車 seg${idx}: ${JSON.stringify(data).slice(0, 120)}`);
+        addDebug(`✅ 我已上車 seg${idx} (0..${idx}): ${JSON.stringify(data).slice(0, 120)}`);
       } else {
         addDebug(`⚠️ board API ${res.status}: ${JSON.stringify(data).slice(0, 120)}`);
       }
@@ -1307,7 +1424,7 @@ export default function TrackingView({
     } finally {
       setBoardSubmitting(false);
     }
-  }, [boardTargetIdx, boardSubmitting, addDebug]);
+  }, [boardTargetIdx, boardSubmitting, addDebug, route.id]);
 
   // ── ETA urgency helpers ─────────────────────────────────────────
   const getEtaColor = (min: number) => {

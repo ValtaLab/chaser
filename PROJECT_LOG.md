@@ -9,6 +9,14 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-17 | 我已上車狀態重入丟失 → 誤顯示 72K
+**App** sessionStorage 持久化 `chaser-boarded:{routeId}`
+1. 根因：manualBoarded 只在 React state，退後台 remount 清空 → 第一程 72K 再出
+2. 撳港島綫時一併 mark 0..idx 前段完成
+3. 乘搭中隱藏掣；接近轉乘先出下一程
+4. 結束旅程 clear storage
+
+
 ### 2026-07-17 | 我已上車（手動確認，停 auto board）
 **App + Worker** `manual-board-20260717`
 1. **問題**：ETA jump / 12′ time fallback / GPS riding 會誤 push「已上 xxx」但人仲喺站
