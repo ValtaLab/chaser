@@ -16,6 +16,7 @@ import {
   getCitybusRouteInfo,
 } from '@/lib/bus-api';
 import { getMTRLineCoords, getLineStations, findStation, getMTRLineName, getMTRPathStations } from '@/lib/mtr-api';
+import { findGMBPathBetweenStops, getGMBStopCoords } from '@/lib/gmb-api';
 
 // ─── MTR direction filter: is this train going towards our destination? ──
 function isSameMTRDirection(lineCode: string, fromStationCode: string, destStationCode: string, trainTerminal: string): boolean {
@@ -696,6 +697,38 @@ export default function TrackingView({
               stops = ctbStops;
             } else {
               stops = [seg.fromStop.location, seg.toStop.location];
+            }
+          } else if (
+            seg.route.type === 'minibus' ||
+            seg.route.operator === 'gmb'
+          ) {
+            addDebug(`  🚐 GMB path ${seg.route.name}: ${seg.fromStop.id}→${seg.toStop.id}`);
+            const gmbPath = await findGMBPathBetweenStops(
+              seg.route.name,
+              seg.fromStop.id,
+              seg.toStop.id,
+              seg.fromStop.nameZh || seg.fromStop.name,
+              seg.toStop.nameZh || seg.toStop.name,
+            );
+            if (gmbPath && gmbPath.length >= 2) {
+              stops = gmbPath;
+              addDebug(`  ✅ GMB: ${gmbPath.length} pts`);
+            } else {
+              // Endpoints only — still try stop API for coords if 0,0
+              const ends: Location[] = [];
+              for (const stop of [seg.fromStop, seg.toStop]) {
+                let loc = stop.location;
+                if (!loc || (loc.lat === 0 && loc.lng === 0)) {
+                  const sid = parseInt(String(stop.id), 10);
+                  if (Number.isFinite(sid)) {
+                    const c = await getGMBStopCoords(sid);
+                    if (c) loc = { lat: c.latitude, lng: c.longitude };
+                  }
+                }
+                if (loc && (loc.lat !== 0 || loc.lng !== 0)) ends.push(loc);
+              }
+              stops = ends.length >= 2 ? ends : [seg.fromStop.location, seg.toStop.location];
+              addDebug(`  ⚠️ GMB fallback ${stops.length} pts`);
             }
           } else {
             // Fallback for other transport types

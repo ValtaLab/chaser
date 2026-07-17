@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
-const CACHE_NAME = "chaser-v13";
-const SW_VERSION = "5.6.0";
+const CACHE_NAME = "chaser-v14";
+const SW_VERSION = "5.7.0";
 const WORKER_URL = "https://chaser-auth.isearover.workers.dev";
 const STATIC_ASSETS = [
   "/",

@@ -285,15 +285,21 @@ export default function MapView({
       {/* Full route polylines per segment (colored) */}
       {routePolylines && routePolylines.map((poly, i) => {
         if (poly.length < 2) return null;
+        // Drop invalid 0,0 points (GMB before enrich sometimes)
+        const clean = poly.filter(p => p && (p.lat !== 0 || p.lng !== 0));
+        if (clean.length < 2) return null;
         const segType = segmentTypes?.[i];
+        const isGMB = segType?.type === 'minibus' || segType?.type === 'gmb';
         const color = segType?.type === 'mtr'
           ? (MTR_LINE_COLORS[segType.name] || SEGMENT_COLORS[i % SEGMENT_COLORS.length])
-          : SEGMENT_COLORS[i % SEGMENT_COLORS.length];
-        const weight = segType?.type === 'mtr' ? 8 : 5;
+          : isGMB
+            ? '#10b981' // emerald — green minibus
+            : SEGMENT_COLORS[i % SEGMENT_COLORS.length];
+        const weight = segType?.type === 'mtr' ? 8 : isGMB ? 6 : 5;
         return (
           <Polyline
             key={`route-poly-${i}`}
-            positions={poly.map(p => [p.lat, p.lng])}
+            positions={clean.map(p => [p.lat, p.lng])}
             pathOptions={{
               color,
               weight,

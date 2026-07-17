@@ -9,6 +9,14 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-17 | Tracking 小巴路線唔畫
+**App** `findGMBPathBetweenStops` + SW v14
+1. 根因：fetchRoutePaths 只處理 MTR/KMB/CTB；minibus 落到 0,0 直線
+2. GMB route-stop 中途站座標 + OSRM snap
+3. enrichSegmentWithCoords 補 GMB stop lat/lng
+4. 地圖小巴線 emerald 綠
+
+
 ### 2026-07-17 | 小巴 ETA 缺失
 **App + Worker** `gmb-eta-20260717`
 1. 根因：`route.type=minibus` 被當 bus 打 KMB/CTB，GMB stop id 無效

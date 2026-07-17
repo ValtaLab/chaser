@@ -127,6 +127,28 @@ export async function enrichSegmentWithCoords(segment: CommuteSegment): Promise<
   // ALWAYS refetch coordinates — stored coords may be stale/wrong
   const company = getSegmentCompany(segment);
 
+  // GMB: numeric stop ids → data.etagmb.gov.hk/stop/{id}
+  if (segment.route.type === 'minibus' || segment.route.operator === 'gmb') {
+    const enrichGmb = async (stop: CommuteSegment['fromStop']) => {
+      const sid = parseInt(String(stop.id), 10);
+      if (!Number.isFinite(sid)) return stop;
+      try {
+        const { getGMBStopCoords } = await import('./gmb-api');
+        const c = await getGMBStopCoords(sid);
+        if (c) {
+          return {
+            ...stop,
+            location: { lat: c.latitude, lng: c.longitude },
+          };
+        }
+      } catch { /* keep stored */ }
+      return stop;
+    };
+    enriched.fromStop = await enrichGmb(segment.fromStop);
+    enriched.toStop = await enrichGmb(segment.toStop);
+    return enriched;
+  }
+
   if (company) {
     // Always refetch fromStop coordinates + name
     const origCoords = segment.fromStop.location;
