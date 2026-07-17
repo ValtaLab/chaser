@@ -1592,7 +1592,6 @@ export default function TrackingView({
               }
             } else if (
               segData?.route.type === 'minibus' ||
-              segData?.route.type === 'gmb' ||
               segData?.route.operator === 'gmb' ||
               filteredEtas.some((e) => e.type === 'gmb')
             ) {
@@ -1609,8 +1608,8 @@ export default function TrackingView({
             }
             const isGMB =
               segData?.route.type === 'minibus' ||
-              segData?.route.type === 'gmb' ||
-              segData?.route.operator === 'gmb';
+              segData?.route.operator === 'gmb' ||
+              filteredEtas.some((e) => e.type === 'gmb');
             const borderColor =
               minEta !== null && minEta <= 2
                 ? 'border-red-500/50'
