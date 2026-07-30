@@ -1393,6 +1393,11 @@ export default function TrackingView({
         manualBoarded.has(midJourney.segmentIndex);
 
       if (ridingConfirmed && !midJourney.nearAlight) {
+        // GPS still detects old segment but user has progressed past it
+        // (e.g. at transfer point where polylines overlap) — show next board
+        if (firstOpen > midJourney.segmentIndex) {
+          return firstOpen;
+        }
         return null;
       }
       // Near alight on confirmed ride → next open leg (usually firstOpen)

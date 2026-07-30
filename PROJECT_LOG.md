@@ -9,6 +9,14 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-30 | 方案 D：Server-side 智能 Push + GPS 上報
+**App + Worker** `smart-approach-push`
+1. Client：TrackingView 每 30 秒 POST GPS → `/journey/location` → JourneyDO
+2. JourneyDO：存 `lastLocation`，`handleWaiting` 用位置計步行時間
+3. Push 邏輯：ETA - 步行時間 ≤ 5 分鐘先 push（舊：ETA ≤ 3 分鐘）
+4. Push 內容包含「由你位置行過去約 X 分鐘」或「你已喺站頭附近」
+5. chaser-auth worker deployed (wrangler)，chaser app CI deployed
+
 ### 2026-07-30 | 步行時間估算不準（已到站仍顯示 11′）
 **App** `eta-service.ts` walk time sanity cap
 1. 根因：OSRM walking route 冇 sanity check，天橋/圍欄繞路返回離譜時間
