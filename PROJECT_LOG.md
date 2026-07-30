@@ -9,6 +9,12 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-30 | 轉乘站「我已上車」按鈕消失
+**App** `TrackingView.tsx` boardTargetIdx fix
+1. 根因：轉乘站兩條 polyline 重疊，GPS 偵測到舊 segment（alreadyOnBoard=true, seg0）
+2. `ridingConfirmed && !nearAlight` → return null 隱藏按鈕
+3. 修復：如果 firstOpen > midJourney.segmentIndex，代表用戶已過咗去，顯示按鈕
+
 ### 2026-07-30 | 方案 D：Server-side 智能 Push + GPS 上報
 **App + Worker** `smart-approach-push`
 1. Client：TrackingView 每 30 秒 POST GPS → `/journey/location` → JourneyDO

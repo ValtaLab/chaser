@@ -44,6 +44,15 @@ const TRANSPORT_ICONS: Record<string, string> = {
   ferry: '⛴️',
 };
 
+/** Per-mode tint for stop-chain chips (static classes — Tailwind v4 can't do dynamic) */
+const STOP_TINTS: Record<string, string> = {
+  bus: 'bg-blue-50 text-blue-800 border-blue-200/70',
+  mtr: 'bg-rose-50 text-rose-800 border-rose-200/70',
+  minibus: 'bg-emerald-50 text-emerald-800 border-emerald-200/70',
+  tram: 'bg-teal-50 text-teal-800 border-teal-200/70',
+  ferry: 'bg-cyan-50 text-cyan-800 border-cyan-200/70',
+};
+
 export default function SwipeableRouteCard({ route, onStart, onEdit, onDelete, isActive, onReturn, onEnd }: SwipeableRouteCardProps) {
   const [offsetX, setOffsetX] = useState(0);
   const [isRevealed, setIsRevealed] = useState(false);
@@ -230,15 +239,24 @@ export default function SwipeableRouteCard({ route, onStart, onEdit, onDelete, i
               </div>
             </div>
 
-            {/* Segment badges */}
+            {/* Segment badges with boarding / alighting stops */}
             <div className="mt-3 pt-3 border-t border-gray-200">
-              <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="flex items-stretch gap-1.5 flex-wrap">
                 {route.segments.map((seg, index) => (
                   <div key={seg.id} className="flex items-center gap-1.5">
-                    <span className="inline-flex items-center gap-1 bg-gray-50 border border-gray-100 px-2 py-1 rounded-lg text-[11px] text-gray-600">
-                      <span className="text-xs">{TRANSPORT_ICONS[seg.route.type] || '🚍'}</span>
-                      <span className="font-medium">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
-                    </span>
+                    <div className={`inline-flex flex-col gap-0.5 border px-2 py-1 rounded-lg transition-colors ${STOP_TINTS[seg.route.type] || 'bg-gray-50 text-gray-600 border-gray-100'}`}>
+                      <span className="inline-flex items-center gap-1 text-[11px] leading-none">
+                        <span className="text-xs">{TRANSPORT_ICONS[seg.route.type] || '🚍'}</span>
+                        <span className="font-semibold">{seg.route.type === 'mtr' ? getMTRLineName(seg.route.name) : seg.route.name}</span>
+                      </span>
+                      <span className="inline-flex items-center gap-0.5 text-[10px] leading-tight opacity-80">
+                        <span className="font-medium">{seg.fromStop.nameZh}</span>
+                        <svg className="w-2.5 h-2.5 flex-shrink-0 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5-5 5" />
+                        </svg>
+                        <span className="font-medium">{seg.toStop.nameZh}</span>
+                      </span>
+                    </div>
                     {index < route.segments.length - 1 && (
                       <svg className="w-3 h-3 text-gray-300 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
