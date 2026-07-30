@@ -543,6 +543,35 @@ export default function TrackingView({
     };
   }, []);
 
+  // ── Report GPS to JourneyDO every 30s (foreground only) ──────────
+  const liveLocationRef = useRef(liveLocation);
+  liveLocationRef.current = liveLocation;
+  useEffect(() => {
+    const AUTH_URL = 'https://chaser-auth.isearover.workers.dev';
+    const reportLocation = async () => {
+      const loc = liveLocationRef.current;
+      if (!loc) return;
+      let token: string | null = null;
+      try {
+        const stored = localStorage.getItem('chaser_auth');
+        if (stored) token = JSON.parse(stored).token;
+      } catch {}
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      try {
+        await fetch(`${AUTH_URL}/journey/location`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ lat: loc.lat, lng: loc.lng }),
+        });
+      } catch { /* silent — non-critical */ }
+    };
+    // Report immediately on mount, then every 30s
+    reportLocation();
+    const interval = setInterval(reportLocation, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   // ── Calculate total journey estimate (debounced) ──────────────────
   // Basic estimate from route data — set synchronously so timeline always shows
   const basicEstimate = useMemo<SmartRouteRecommendation | null>(() => {

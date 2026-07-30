@@ -9,6 +9,13 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-30 | 步行時間估算不準（已到站仍顯示 11′）
+**App** `eta-service.ts` walk time sanity cap
+1. 根因：OSRM walking route 冇 sanity check，天橋/圍欄繞路返回離譜時間
+2. 直線 < 200m → 直接 1 分鐘（已喺站頭）
+3. OSRM 結果 > 直線估算 ×2 → cap 落直線 ×1.3
+4. 三處步行計算都加咗（首次上車、retry、轉乘）
+
 ### 2026-07-17 | 小巴線 OSRM 亂繞
 **App** SW v15 — GMB 唔 snap OSRM；用完整站序座標；循環線 wrap；HKI 優先
 
