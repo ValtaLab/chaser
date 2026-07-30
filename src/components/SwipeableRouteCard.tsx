@@ -193,10 +193,7 @@ export default function SwipeableRouteCard({ route, onStart, onEdit, onDelete, i
                   <h3 className="font-semibold text-gray-900 text-[15px] flex-shrink-0">{route.name}</h3>
                   {route.segments.length > 0 && (
                     <span className="text-[11px] text-gray-400 truncate">
-                      {[
-                        route.segments[0].fromStop.nameZh,
-                        ...route.segments.map(s => s.toStop.nameZh),
-                      ].join(' → ')}
+                      {route.segments[0].fromStop.nameZh} → {route.segments[route.segments.length - 1].toStop.nameZh}
                     </span>
                   )}
                 </div>
