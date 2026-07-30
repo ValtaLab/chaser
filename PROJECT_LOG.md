@@ -11,9 +11,9 @@ last_update_by: HermesBPi
 
 ### 2026-07-30 | 路線卡片顯示上落車站名
 **App** `SwipeableRouteCard.tsx`
-1. 路線名稱右邊加灰色文字：上車站 → 轉乘站 → 落車站（全鏈）
-2. 例：`HKU  富蝶總站 → 大埔中心總站 → 薄扶林道`
-3. Segment badges 保持原樣（站名已喺標題顯示）
+1. 路線名稱右邊加灰色文字：起點站 → 終點站（唔顯示轉乘站）
+2. 例：`HKU  富蝶總站 → 薄扶林道`
+3. Segment badges 保持原樣
 
 ### 2026-07-30 | 取消「行程監察已啟動」確認通知
 **Worker** `journey-do.ts` — 移除 /start 時嘅確認 push，只喺真正需要時先通知
