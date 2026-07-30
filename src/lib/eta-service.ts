@@ -445,10 +445,22 @@ export async function calculateTotalJourney(
         const stopLng = Number(seg.fromStop.location.lng).toFixed(5);
         const userLat = Number(currentLocation.lat).toFixed(5);
         const userLng = Number(currentLocation.lng).toFixed(5);
-        const dist = haversineMeters(currentLocation, seg.fromStop.location).toFixed(0);
+        const distM = haversineMeters(currentLocation, seg.fromStop.location);
+        const dist = distM.toFixed(0);
         console.log(`[Journey] Walk calc: user=(${userLat},${userLng}) stop=${seg.fromStop.nameZh} (${stopLat},${stopLng}) dist=${dist}m`);
-        walkMinutes = await walkTimeBetween(currentLocation, seg.fromStop.location);
-        console.log(`[Journey] Walk result: ${walkMinutes}min`);
+        if (distM < 200) {
+          walkMinutes = 1;
+          console.log(`[Journey] Walk: <200m → 1min (already at stop)`);
+        } else {
+          walkMinutes = await walkTimeBetween(currentLocation, seg.fromStop.location);
+          // Sanity cap: OSRM walking can give absurd detours in HK (bridges, tunnels)
+          const straightLineMin = Math.ceil(distM / 80) + 1;
+          if (walkMinutes > straightLineMin * 2) {
+            console.log(`[Journey] Walk capped: OSRM=${walkMinutes}min > 2× straight=${straightLineMin}min`);
+            walkMinutes = Math.max(1, Math.ceil(straightLineMin * 1.3));
+          }
+          console.log(`[Journey] Walk result: ${walkMinutes}min`);
+        }
       } else {
         // Retry fetching stop coords directly (enrichment may have failed)
         try {
@@ -456,7 +468,16 @@ export async function calculateTotalJourney(
           const stopInfo = await (company === 'CTB' ? getCitybusStopInfo(seg.fromStop.id) : getKMBStopInfo(seg.fromStop.id));
           if (stopInfo && typeof stopInfo.lat === 'number' && typeof stopInfo.long === 'number') {
             seg.fromStop.location = { lat: stopInfo.lat, lng: stopInfo.long };
-            walkMinutes = await walkTimeBetween(currentLocation, seg.fromStop.location);
+            const retryDistM = haversineMeters(currentLocation, seg.fromStop.location);
+            if (retryDistM < 200) {
+              walkMinutes = 1;
+            } else {
+              walkMinutes = await walkTimeBetween(currentLocation, seg.fromStop.location);
+              const straightLineMin = Math.ceil(retryDistM / 80) + 1;
+              if (walkMinutes > straightLineMin * 2) {
+                walkMinutes = Math.max(1, Math.ceil(straightLineMin * 1.3));
+              }
+            }
             console.log(`[Journey] Retry resolved stop coords: ${seg.fromStop.nameZh} (${stopInfo.lat}, ${stopInfo.long})`);
           }
         } catch (e) {
@@ -479,7 +500,16 @@ export async function calculateTotalJourney(
     } else if (prevSeg) {
       // Walk from previous alighting stop to this boarding stop (transfer)
       if (!isZeroLocation(prevSeg.toStop.location) && !isZeroLocation(seg.fromStop.location)) {
-        walkMinutes = await walkTimeBetween(prevSeg.toStop.location, seg.fromStop.location);
+        const transferDistM = haversineMeters(prevSeg.toStop.location, seg.fromStop.location);
+        if (transferDistM < 200) {
+          walkMinutes = 1;
+        } else {
+          walkMinutes = await walkTimeBetween(prevSeg.toStop.location, seg.fromStop.location);
+          const straightLineMin = Math.ceil(transferDistM / 80) + 1;
+          if (walkMinutes > straightLineMin * 2) {
+            walkMinutes = Math.max(1, Math.ceil(straightLineMin * 1.3));
+          }
+        }
       } else {
         walkMinutes = 5; // default transfer walk
         minConfidence = 'low';
