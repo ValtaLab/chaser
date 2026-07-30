@@ -9,6 +9,15 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-30 | 路線卡片顯示上落車站名
+**App** `SwipeableRouteCard.tsx`
+1. 每段 badge 由單行改雙行：路線名 + 上車站 → 落車站
+2. 按交通工具上色（巴士藍、港鐵玫紅、小巴綠、電車青、渡輪藍綠）
+3. 方便用戶喺多條路線入面快速分辨
+
+### 2026-07-30 | 取消「行程監察已啟動」確認通知
+**Worker** `journey-do.ts` — 移除 /start 時嘅確認 push，只喺真正需要時先通知
+
 ### 2026-07-30 | 轉乘站「我已上車」按鈕消失
 **App** `TrackingView.tsx` boardTargetIdx fix
 1. 根因：轉乘站兩條 polyline 重疊，GPS 偵測到舊 segment（alreadyOnBoard=true, seg0）
