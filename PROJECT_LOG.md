@@ -9,6 +9,14 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-31 | MTR track 方向錯位修復（旺角→金鐘交叉）
+**App** `mtr-api.ts` `getMTRTrackPath`
+1. **根因 1（bridge 點過頭）**：上一版為咗連續性加 lastBeforeLo，令 MOK→ADM 條 path 先經 CEN（lo 之前嗰點）再返轉頭 — 交叉
+2. **根因 2（result.reverse 調轉端點）**：原本 `if (fromAlong > toAlong) result.reverse()` 連 fromLoc/toLoc 都調轉，起點變咗終點站
+3. 修復：唔再加任何 bridge 點（fromLoc/toLoc 自帶站座標）；向下行時只 reverse body，端點保持原位
+4. 驗證：MOK→ADM 由旺角向南直達金鐘（無 CEN 繞路）；AEL TSY→AWE U-turn 係假陽性（機場快線 U 形軌道）
+5. 剩餘 EMPTY 全部係支線站（RAC 馬場/LMC 落馬洲/LHP 康城）→ 預期 fallback 站點直線
+
 ### 2026-07-31 | MTR 站表補齊 + track slicing 修復（荃灣線錯亂）
 **App** `mtr-api.ts` + `mtr-geometry.ts`
 1. **缺站 bug**：MTR_STATIONS TWL 得 13 站（缺美孚 MEF/荔景 LAK/大窩口 TWH），AEL 缺青衣 TSY、機場 AIR 座標錯（113.918→113.936）

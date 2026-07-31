@@ -327,32 +327,22 @@ export function getMTRTrackPath(
   const hi = Math.max(fromAlong, toAlong);
   if (hi - lo < 10) return [];
 
-  // Walk the polyline, collecting points between lo and hi.
+  // Walk the polyline, collecting points with cumulative distance in [lo, hi].
   // Points may be sparse (Douglas-Peucker simplified) so stations can fall
-  // between two points — include the nearest point on each side of the slice
-  // to guarantee continuity, and never break early on an overshoot.
-  const pts: { lat: number; lng: number }[] = [];
+  // between two points; fromLoc/toLoc are appended below so we do NOT add
+  // bridge points on either side — that would pull the path through a station
+  // outside the slice (e.g. MOK→ADM via CEN) or overshoot (e.g. MOK → 太子).
+  const body: { lat: number; lng: number }[] = [];
   let cum = 0;
   const P = geom.points;
-  let started = false;
-  let lastBeforeLo: { lat: number; lng: number } | null = null;
   for (let i = 0; i < P.length; i++) {
     if (i > 0) {
       cum += haversineQuick(P[i - 1], P[i]);
     }
-    if (!started && cum >= lo) {
-      started = true;
-      if (lastBeforeLo) pts.push(lastBeforeLo);
-    }
-    if (started && cum <= hi) {
-      pts.push({ lat: P[i][0], lng: P[i][1] });
-    } else if (started && cum > hi) {
-      // include one point past the end so the slice reaches the to-station
-      pts.push({ lat: P[i][0], lng: P[i][1] });
+    if (cum >= lo && cum <= hi) {
+      body.push({ lat: P[i][0], lng: P[i][1] });
+    } else if (cum > hi) {
       break;
-    }
-    if (cum < lo) {
-      lastBeforeLo = { lat: P[i][0], lng: P[i][1] };
     }
   }
 
@@ -360,7 +350,11 @@ export function getMTRTrackPath(
   const fromLoc = { lat: from.lat, lng: from.lng };
   const toLoc = { lat: to.lat, lng: to.lng };
   const result: { lat: number; lng: number }[] = [fromLoc];
-  for (const p of pts) {
+
+  // If travelling "down" (fromAlong > toAlong), body was collected lo→hi;
+  // append it reversed so the path runs from fromLoc toward toLoc.
+  const ordered = fromAlong > toAlong ? [...body].reverse() : body;
+  for (const p of ordered) {
     const last = result[result.length - 1];
     if (Math.abs(p.lat - last.lat) > 1e-6 || Math.abs(p.lng - last.lng) > 1e-6) {
       result.push(p);
@@ -371,8 +365,6 @@ export function getMTRTrackPath(
     result.push(toLoc);
   }
 
-  // Reverse if user is travelling in the "down" direction (keeps fraction consistent)
-  if (fromAlong > toAlong) result.reverse();
   return result.length >= 2 ? result : [];
 }
 
