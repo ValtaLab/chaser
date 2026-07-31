@@ -9,6 +9,12 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-30 | MTR 月台通知方向過濾
+**Worker** `journey-do.ts` fetchETAs
+1. 根因：讀晒 UP + DOWN 兩個方向，往羅湖同往金鐘嘅車都一齊推
+2. 修復：傳入 `toStop.id` 做 `dest` 過濾，只推往用戶目的地嘅車
+3. Fallback：如果過濾後冇結果（中間站），返回全部
+
 ### 2026-07-30 | 路線卡片顯示上落車站名
 **App** `SwipeableRouteCard.tsx`
 1. 路線名稱右邊加灰色文字：起點站 → 終點站（唔顯示轉乘站）
