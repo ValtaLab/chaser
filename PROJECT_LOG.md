@@ -9,6 +9,14 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-31 | 港鐵線路精準繪製（OSM 真實軌道）
+**App** `mtr-geometry.ts`（新）+ `mtr-api.ts` + `TrackingView.tsx`
+1. 用 Overpass API fetch 9 條 MTR 線嘅真實軌道幾何（OSM），Douglas-Peucker 簡化（40m）
+2. `getMTRTrackPath()` 按 along-distance 切兩站之間嘅軌道
+3. TrackingView 優先用真實軌道，fallback 去站點直線
+4. 偏離 >800m 嘅站（LMC/TUM/SIH/KSR/POA/OCP/AIR）唔放入 map
+5. `scripts/fetch-mtr-geometry.py` 可重跑更新數據
+
 ### 2026-07-31 | MTR 上車後 GPS match 唔到 → 錯誤顯示步行時間
 **App** `journey-progress.ts` + `TrackingView.tsx`
 1. 根因：`maxOffRouteM: 150` 太緊，東鐵線行隧道穿山，GPS 同站間直線可差成公里
