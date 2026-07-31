@@ -15,7 +15,7 @@ import {
   findCitybusStopAnyDirection,
   getCitybusRouteInfo,
 } from '@/lib/bus-api';
-import { getMTRLineCoords, getLineStations, findStation, getMTRLineName, getMTRPathStations } from '@/lib/mtr-api';
+import { getMTRLineCoords, getLineStations, findStation, getMTRLineName, getMTRPathStations, getMTRTrackPath } from '@/lib/mtr-api';
 import { findGMBPathBetweenStops, getGMBStopCoords } from '@/lib/gmb-api';
 
 // ─── MTR direction filter: is this train going towards our destination? ──
@@ -683,30 +683,34 @@ export default function TrackingView({
           addDebug(`  segment: ${seg.route.type} ${seg.route.name} (${seg.route.operator || 'unknown'})`);
 
           if (seg.route.type === 'mtr') {
-            // MTR: line-scoped station path with calibrated coords (skip Racecourse spur)
+            // MTR: prefer real OSM track geometry (follows tunnels/curves), fall back to station path
             const lineCode = seg.route.name;
-            const path = getMTRPathStations(
-              lineCode,
-              seg.fromStop.id || seg.fromStop.nameZh || seg.fromStop.name,
-              seg.toStop.id || seg.toStop.nameZh || seg.toStop.name,
-            );
-            addDebug(`  MTR ${lineCode}: path ${path.length} stations`);
-            if (path.length >= 2) {
-              stops = path.map(s => ({ lat: s.lat, lng: s.lng }));
-              addDebug(`  ✅ MTR: ${stops.map(s => `${s.lat.toFixed(4)},${s.lng.toFixed(4)}`).join(' → ').slice(0, 120)}`);
+            const fromKey = seg.fromStop.id || seg.fromStop.nameZh || seg.fromStop.name;
+            const toKey = seg.toStop.id || seg.toStop.nameZh || seg.toStop.name;
+            const track = getMTRTrackPath(lineCode, fromKey, toKey);
+            if (track.length >= 2) {
+              stops = track;
+              addDebug(`  ✅ MTR ${lineCode}: real track ${track.length} pts`);
             } else {
-              // Fallback: resolve each end on this line
-              const fromStation = findStation(seg.fromStop.id, lineCode) || findStation(seg.fromStop.nameZh || seg.fromStop.name, lineCode);
-              const toStation = findStation(seg.toStop.id, lineCode) || findStation(seg.toStop.nameZh || seg.toStop.name, lineCode);
-              if (fromStation && toStation) {
-                stops = [
-                  { lat: fromStation.lat, lng: fromStation.lng },
-                  { lat: toStation.lat, lng: toStation.lng },
-                ];
-                addDebug(`  ⚠️ MTR fallback 2-point: ${fromStation.stationCode}→${toStation.stationCode}`);
+              // Fallback: line-scoped station path with calibrated coords (skip Racecourse spur)
+              const path = getMTRPathStations(lineCode, fromKey, toKey);
+              addDebug(`  MTR ${lineCode}: station path ${path.length} stations (no track geom)`);
+              if (path.length >= 2) {
+                stops = path.map(s => ({ lat: s.lat, lng: s.lng }));
+                addDebug(`  ⚠️ MTR station-line: ${stops.map(s => `${s.lat.toFixed(4)},${s.lng.toFixed(4)}`).join(' → ').slice(0, 120)}`);
               } else {
-                stops = [seg.fromStop.location, seg.toStop.location];
-                addDebug(`  ⚠️ MTR using stored stop locations`);
+                const fromStation = findStation(seg.fromStop.id, lineCode) || findStation(seg.fromStop.nameZh || seg.fromStop.name, lineCode);
+                const toStation = findStation(seg.toStop.id, lineCode) || findStation(seg.toStop.nameZh || seg.toStop.name, lineCode);
+                if (fromStation && toStation) {
+                  stops = [
+                    { lat: fromStation.lat, lng: fromStation.lng },
+                    { lat: toStation.lat, lng: toStation.lng },
+                  ];
+                  addDebug(`  ⚠️ MTR fallback 2-point: ${fromStation.stationCode}→${toStation.stationCode}`);
+                } else {
+                  stops = [seg.fromStop.location, seg.toStop.location];
+                  addDebug(`  ⚠️ MTR using stored stop locations`);
+                }
               }
             }
           } else if (seg.route.operator === 'kmb') {

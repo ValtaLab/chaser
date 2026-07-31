@@ -2,6 +2,8 @@
 // https://opendata.mtr.com.hk/data/mtr_lines_and_stations.csv
 // https://rt.data.gov.hk/v1/transport/mtr/getSchedule.php
 
+import { MTR_GEOMETRY } from './mtr-geometry';
+
 const MTR_ETA_BASE = 'https://rt.data.gov.hk/v1/transport/mtr';
 
 export interface MTRLine {
@@ -294,4 +296,75 @@ export function getLineStations(lineCode: string): MTRStation[] {
 
 export function getInterchangeStations(stationCode: string): MTRStation[] {
   return MTR_STATIONS.filter(s => s.stationCode === stationCode);
+}
+
+// ── Real track geometry (from OSM, see mtr-geometry.ts) ──────────────
+
+/**
+ * Slice the real OSM track geometry between two stations on a line.
+ * Returns [lat, lng] points following the actual rail alignment (tunnels, curves).
+ * Falls back to straight-line station path when geometry is unavailable.
+ */
+export function getMTRTrackPath(
+  lineCode: string,
+  fromCodeOrName: string,
+  toCodeOrName: string,
+): { lat: number; lng: number }[] {
+  const geom = MTR_GEOMETRY[lineCode];
+  const from = findStation(fromCodeOrName, lineCode);
+  const to = findStation(toCodeOrName, lineCode);
+  if (!geom || !from || !to) return [];
+
+  const fromAlong = geom.stations[from.stationCode];
+  const toAlong = geom.stations[to.stationCode];
+  if (fromAlong === undefined || toAlong === undefined) return [];
+
+  const lo = Math.min(fromAlong, toAlong);
+  const hi = Math.max(fromAlong, toAlong);
+  if (hi - lo < 10) return [];
+
+  // Walk the polyline, collecting points between lo and hi
+  const pts: { lat: number; lng: number }[] = [];
+  let cum = 0;
+  const P = geom.points;
+  for (let i = 0; i < P.length; i++) {
+    if (i > 0) {
+      cum += haversineQuick(P[i - 1], P[i]);
+    }
+    if (cum >= lo && cum <= hi) {
+      pts.push({ lat: P[i][0], lng: P[i][1] });
+    } else if (cum > hi) {
+      break;
+    }
+  }
+
+  // Ensure endpoints are the actual station coords (geometry may not pass exactly through)
+  const fromLoc = { lat: from.lat, lng: from.lng };
+  const toLoc = { lat: to.lat, lng: to.lng };
+  const result: { lat: number; lng: number }[] = [fromLoc];
+  for (const p of pts) {
+    const last = result[result.length - 1];
+    if (Math.abs(p.lat - last.lat) > 1e-6 || Math.abs(p.lng - last.lng) > 1e-6) {
+      result.push(p);
+    }
+  }
+  const lastPt = result[result.length - 1];
+  if (Math.abs(toLoc.lat - lastPt.lat) > 1e-6 || Math.abs(toLoc.lng - lastPt.lng) > 1e-6) {
+    result.push(toLoc);
+  }
+
+  // Reverse if user is travelling in the "down" direction (keeps fraction consistent)
+  if (fromAlong > toAlong) result.reverse();
+  return result.length >= 2 ? result : [];
+}
+
+function haversineQuick(a: [number, number], b: [number, number]): number {
+  const R = 6371000;
+  const dLat = ((b[0] - a[0]) * Math.PI) / 180;
+  const dLng = ((b[1] - a[1]) * Math.PI) / 180;
+  const sLat = Math.sin(dLat / 2);
+  const sLng = Math.sin(dLng / 2);
+  return R * 2 * Math.asin(
+    Math.sqrt(sLat * sLat + Math.cos((a[0] * Math.PI) / 180) * Math.cos((b[0] * Math.PI) / 180) * sLng * sLng)
+  );
 }
