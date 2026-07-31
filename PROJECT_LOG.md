@@ -11,11 +11,13 @@ last_update_by: HermesBPi
 
 ### 2026-07-31 | 港鐵線路精準繪製（OSM 真實軌道）
 **App** `mtr-geometry.ts`（新）+ `mtr-api.ts` + `TrackingView.tsx`
-1. 用 Overpass API fetch 9 條 MTR 線嘅真實軌道幾何（OSM），Douglas-Peucker 簡化（40m）
-2. `getMTRTrackPath()` 按 along-distance 切兩站之間嘅軌道
-3. TrackingView 優先用真實軌道，fallback 去站點直線
-4. 偏離 >800m 嘅站（LMC/TUM/SIH/KSR/POA/OCP/AIR）唔放入 map
-5. `scripts/fetch-mtr-geometry.py` 可重跑更新數據
+1. 用 Overpass API fetch 9 條 MTR 線嘅真實軌道幾何（OSM）
+2. Dijkstra routing 站→站，branch detour 偵測（path > 3× 直線 → 用直線）
+3. Douglas-Peucker 簡化（40m），成個數據檔 9KB
+4. `getMTRTrackPath()` 按 along-distance 切兩站之間嘅軌道
+5. TrackingView 優先用真實軌道，fallback 去站點直線
+6. SIL（南港島線）OSM 圖斷開，用直線 fallback
+7. `scripts/fetch-mtr-geometry.py` 可重跑更新數據
 
 ### 2026-07-31 | MTR 上車後 GPS match 唔到 → 錯誤顯示步行時間
 **App** `journey-progress.ts` + `TrackingView.tsx`
