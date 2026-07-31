@@ -9,6 +9,14 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-31 | MTR 站表補齊 + track slicing 修復（荃灣線錯亂）
+**App** `mtr-api.ts` + `mtr-geometry.ts`
+1. **缺站 bug**：MTR_STATIONS TWL 得 13 站（缺美孚 MEF/荔景 LAK/大窩口 TWH），AEL 缺青衣 TSY、機場 AIR 座標錯（113.918→113.936）
+2. 補齊後 TWL 16/16、AEL 5/5 站，fix script 重新 project 站距（TWL 全部 monotonic）
+3. **slicing bug**：`getMTRTrackPath` 用 `cum>hi` 就 break，TWL points 太疏（22 pts/15.5km）令 CEN→ADM、KWF→KWH 等 slice 出 0 點
+4. 修復：slice 包含 lo 之前最近點 + hi 之後一點，保證連續
+5. 驗證：真實 API 測 535 pairs，只有支線站（RAC/LMC/LHP）fallback（預期）；TML 27 站站點直線全齊
+
 ### 2026-07-31 | 港鐵線路精準繪製（OSM 真實軌道）
 **App** `mtr-geometry.ts`（新）+ `mtr-api.ts` + `TrackingView.tsx`
 1. 用 Overpass API fetch MTR 線嘅真實軌道幾何（OSM）

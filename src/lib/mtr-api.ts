@@ -68,8 +68,11 @@ export const MTR_STATIONS: MTRStation[] = [
   { line: 'TWL', stationId: 'SSP', stationCode: 'SSP', name_tc: '深水埗', name_en: 'Sham Shui Po', lat: 22.3310, lng: 114.1626 },
   { line: 'TWL', stationId: 'CSW', stationCode: 'CSW', name_tc: '長沙灣', name_en: 'Cheung Sha Wan', lat: 22.3371, lng: 114.1538 },
   { line: 'TWL', stationId: 'LCK', stationCode: 'LCK', name_tc: '荔枝角', name_en: 'Lai Chi Kok', lat: 22.3424, lng: 114.1465 },
+  { line: 'TWL', stationId: 'MEF', stationCode: 'MEF', name_tc: '美孚', name_en: 'Mei Foo', lat: 22.3377, lng: 114.1430 },
+  { line: 'TWL', stationId: 'LAK', stationCode: 'LAK', name_tc: '荔景', name_en: 'Lai King', lat: 22.3483, lng: 114.1267 },
   { line: 'TWL', stationId: 'KWF', stationCode: 'KWF', name_tc: '葵芳', name_en: 'Kwai Fong', lat: 22.3547, lng: 114.1298 },
   { line: 'TWL', stationId: 'KWH', stationCode: 'KWH', name_tc: '葵涌', name_en: 'Kwai Chung', lat: 22.3585, lng: 114.1260 },
+  { line: 'TWL', stationId: 'TWH', stationCode: 'TWH', name_tc: '大窩口', name_en: 'Tai Wo Hau', lat: 22.3704, lng: 114.1253 },
   { line: 'TWL', stationId: 'TSW', stationCode: 'TSW', name_tc: '荃灣', name_en: 'Tsuen Wan', lat: 22.3708, lng: 114.1173 },
   
   // Kwun Tong Line (KTL)
@@ -180,7 +183,8 @@ export const MTR_STATIONS: MTRStation[] = [
   // Airport Express (AEL)
   { line: 'AEL', stationId: 'HOK', stationCode: 'HOK', name_tc: '香港', name_en: 'Hong Kong', lat: 22.2855, lng: 114.1575 },
   { line: 'AEL', stationId: 'KOW', stationCode: 'KOW', name_tc: '九龍', name_en: 'Kowloon', lat: 22.3050, lng: 114.1680 },
-  { line: 'AEL', stationId: 'AIR', stationCode: 'AIR', name_tc: '機場', name_en: 'Airport', lat: 22.3215, lng: 113.9180 },
+  { line: 'AEL', stationId: 'TSY', stationCode: 'TSY', name_tc: '青衣', name_en: 'Tsing Yi', lat: 22.3602, lng: 114.1076 },
+  { line: 'AEL', stationId: 'AIR', stationCode: 'AIR', name_tc: '機場', name_en: 'Airport', lat: 22.3153, lng: 113.9362 },
   { line: 'AEL', stationId: 'AWE', stationCode: 'AWE', name_tc: '博覽館', name_en: 'AsiaWorld-Expo', lat: 22.3215, lng: 113.9440 },
 ];
 
@@ -323,18 +327,32 @@ export function getMTRTrackPath(
   const hi = Math.max(fromAlong, toAlong);
   if (hi - lo < 10) return [];
 
-  // Walk the polyline, collecting points between lo and hi
+  // Walk the polyline, collecting points between lo and hi.
+  // Points may be sparse (Douglas-Peucker simplified) so stations can fall
+  // between two points — include the nearest point on each side of the slice
+  // to guarantee continuity, and never break early on an overshoot.
   const pts: { lat: number; lng: number }[] = [];
   let cum = 0;
   const P = geom.points;
+  let started = false;
+  let lastBeforeLo: { lat: number; lng: number } | null = null;
   for (let i = 0; i < P.length; i++) {
     if (i > 0) {
       cum += haversineQuick(P[i - 1], P[i]);
     }
-    if (cum >= lo && cum <= hi) {
+    if (!started && cum >= lo) {
+      started = true;
+      if (lastBeforeLo) pts.push(lastBeforeLo);
+    }
+    if (started && cum <= hi) {
       pts.push({ lat: P[i][0], lng: P[i][1] });
-    } else if (cum > hi) {
+    } else if (started && cum > hi) {
+      // include one point past the end so the slice reaches the to-station
+      pts.push({ lat: P[i][0], lng: P[i][1] });
       break;
+    }
+    if (cum < lo) {
+      lastBeforeLo = { lat: P[i][0], lng: P[i][1] };
     }
   }
 
