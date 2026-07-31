@@ -364,6 +364,8 @@ export default function TrackingView({
   const [liveLocation, setLiveLocation] = useState<Location | null>(currentLocation);
   const [showETAPanel, setShowETAPanel] = useState(true);
   const [routePolylines, setRoutePolylines] = useState<Location[][]>([]);
+  /** Segment transport types — passed to detectMidJourney for MTR-wide threshold */
+  const segmentTypes = useMemo(() => route.segments.map(s => s.route.type), [route.segments]);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [alternatives, setAlternatives] = useState<SegmentAlternatives[]>([]);
@@ -618,7 +620,7 @@ export default function TrackingView({
   // ── Continuous mid-journey phase (ETA filter + estimate + DO resync) ──
   useEffect(() => {
     if (!liveLocation || routePolylines.length === 0) return;
-    const raw = detectMidJourney(liveLocation, routePolylines);
+    const raw = detectMidJourney(liveLocation, routePolylines, {}, segmentTypes);
     const mid = applyManualBoardOverride(raw, manualBoardedRef.current);
     setMidJourney(mid);
     if (mid) {
@@ -641,7 +643,7 @@ export default function TrackingView({
       try {
         const mid =
           liveLocation && routePolylines.length > 0
-            ? detectMidJourney(liveLocation, routePolylines)
+            ? detectMidJourney(liveLocation, routePolylines, {}, segmentTypes)
             : midJourney;
 
         addDebug(`📍 ${liveLocation ? 'GPS' : (enrichedSegmentsRef.current?.[0]?.fromStop.location ? '車站' : '預設')}: (${loc.lat.toFixed(4)}, ${loc.lng.toFixed(4)})`);
@@ -1315,7 +1317,7 @@ export default function TrackingView({
       const hasGps = !!liveLocation;
       if (hasPoly && hasGps) {
         const mid = applyManualBoardOverride(
-          detectMidJourney(liveLocation!, routePolylines),
+          detectMidJourney(liveLocation!, routePolylines, {}, segmentTypes),
           manualBoardedRef.current,
         );
         if (mid) setMidJourney(mid);
@@ -1334,7 +1336,7 @@ export default function TrackingView({
         const mid =
           liveLocation && routePolylines.length > 0
             ? applyManualBoardOverride(
-                detectMidJourney(liveLocation, routePolylines),
+                detectMidJourney(liveLocation, routePolylines, {}, segmentTypes),
                 manualBoardedRef.current,
               )
             : null;

@@ -37,6 +37,8 @@ export interface MidJourneyState {
 const DEFAULTS = {
   /** Max distance from polyline to count as "on route" */
   maxOffRouteM: 150,
+  /** Wider threshold for MTR (tunnels run far from surface GPS) */
+  maxOffRouteMTR: 1500,
   /** Must be this far from boarding end of poly to count as left the stop */
   minFromStartM: 400,
   /** Or at least this fraction along the segment */
@@ -126,6 +128,7 @@ export function detectMidJourney(
   user: Location | null | undefined,
   polylines: Location[][],
   opts: Partial<typeof DEFAULTS> = {},
+  segmentTypes?: string[],
 ): MidJourneyState | null {
   if (!user || !polylines?.length) return null;
   const cfg = { ...DEFAULTS, ...opts };
@@ -144,7 +147,10 @@ export function detectMidJourney(
   if (scored.length === 0) return null;
   scored.sort((a, b) => a.score - b.score);
   const best = scored[0];
-  if (best.distToPolylineM > cfg.maxOffRouteM) return null;
+  // MTR tunnels run far from surface GPS — use wider threshold
+  const isMTR = segmentTypes?.[best.segmentIndex] === 'mtr';
+  const maxOff = isMTR ? cfg.maxOffRouteMTR : cfg.maxOffRouteM;
+  if (best.distToPolylineM > maxOff) return null;
 
   const pastBoard =
     best.distFromStartM >= cfg.minFromStartM ||
