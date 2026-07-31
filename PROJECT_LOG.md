@@ -9,6 +9,12 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-31 | MTR 上車後 GPS match 唔到 → 錯誤顯示步行時間
+**App** `journey-progress.ts` + `TrackingView.tsx`
+1. 根因：`maxOffRouteM: 150` 太緊，東鐵線行隧道穿山，GPS 同站間直線可差成公里
+2. 修復：MTR 段用 `maxOffRouteMTR: 1500`（其他交通工具維持 150m）
+3. `detectMidJourney` 新增 `segmentTypes` 參數，按段類型揀閾值
+
 ### 2026-07-30 | MTR 月台通知方向過濾
 **Worker** `journey-do.ts` fetchETAs
 1. 根因：讀晒 UP + DOWN 兩個方向，往羅湖同往金鐘嘅車都一齊推
