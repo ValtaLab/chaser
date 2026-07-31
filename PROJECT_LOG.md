@@ -9,6 +9,13 @@ last_update_by: HermesBPi
 
 # 趕車 (Chaser) — 項目進展日誌
 
+### 2026-07-31 | 尾班車誤判修復（307「最後班次」remark）
+**App** `alternative-routes.ts` `detectLastServicePassed`
+1. **根因**：function 開頭就 check remark regex `/最後|尾班|已過/` — KMB 對尾班車嘅 remark 係「最後班次」+ 有效 ETA（例如 23:40 到站），意思係「呢班就係尾班，仲有車」——但 regex 見到「最後」兩個字就即刻判「已過尾班車」
+2. 修復：有 positive imminent ETA（≤90min）就永遠唔判「已過」（尾班車未到都算）；remark 判斷移到後面，只 match 明確過去式「已過/已於xx開出/已開出/尾班車已」
+3. 驗證：307 inbound KMB 實際數據 remark「最後班次」+ ETA 23:40 → 而家正確判有車；「最後班次已於23:40開出」先判已過
+4. 307 係聯營線（KMB+城巴）— 城巴 outbound 23:34 仲有車去中環碼頭，KMB outbound 已冇車
+
 ### 2026-07-31 | MTR track 方向錯位修復（旺角→金鐘交叉）
 **App** `mtr-api.ts` `getMTRTrackPath`
 1. **根因 1（bridge 點過頭）**：上一版為咗連續性加 lastBeforeLo，令 MOK→ADM 條 path 先經 CEN（lo 之前嗰點）再返轉頭 — 交叉

@@ -45,11 +45,6 @@ export function detectLastServicePassed(
   configuredETAs: { minutesAway: number; remark?: string }[],
   routeType: string,
 ): { isLastServicePassed: boolean; noEtaData: boolean } {
-  const remarks = configuredETAs.map(e => e.remark || '').join(' ');
-  if (/最後|尾班|已過/.test(remarks)) {
-    return { isLastServicePassed: true, noEtaData: false };
-  }
-
   const hour = new Date().getHours(); // 0–23 local
   /** Overnight gap when far-only ETAs mean closed, not "wait 3h" */
   const serviceGapWindow = hour >= 0 && hour < 6;
@@ -58,6 +53,10 @@ export function detectLastServicePassed(
   const positive = configuredETAs.filter(e => e.minutesAway >= 0);
   const imminent = positive.filter(e => e.minutesAway <= MAX_IMMINENT_ETA_MIN);
 
+  // ANY imminent positive ETA = service is still running. This includes the
+  // literal last bus: KMB remarks the final run as "最後班次" but it still
+  // has a real eta — it has NOT passed yet. Only after it leaves do rows
+  // become invalid (-1). So positive imminent ⇒ never "last service passed".
   if (imminent.length > 0) {
     return { isLastServicePassed: false, noEtaData: false };
   }
@@ -72,8 +71,14 @@ export function detectLastServicePassed(
     return { isLastServicePassed: false, noEtaData: true };
   }
 
-  // Rows exist but all invalid (-1) without last-service remark
-  // Only treat as last service in the deep night window
+  // Rows exist but all invalid (-1). Check remark for EXPLICIT past-tense
+  // "already left" wording. Careful: "最後班次"/"尾班車" alone means the final
+  // run is coming (valid eta), NOT that it has passed — those must not trigger.
+  const remarks = configuredETAs.map(e => e.remark || '').join(' ');
+  if (/已過|已於.*開出|已開出|尾班車已/.test(remarks)) {
+    return { isLastServicePassed: true, noEtaData: false };
+  }
+
   // MTR: never claim last train before late night solely on empty/invalid ETA
   if (routeType === 'mtr' && !lateNight) {
     return { isLastServicePassed: false, noEtaData: true };
