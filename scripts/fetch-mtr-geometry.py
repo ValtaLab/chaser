@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Fetch MTR track geometry from OSM Overpass.
-Strategy: build way-graph, Dijkstra-route between consecutive stations.
-Each inter-station segment is branch-free by construction.
+Strategy: Dijkstra routing between consecutive stations through the way-graph.
+Branch detour detection: if path > 3x straight-line, use straight line instead.
+Special handling for TML (U-shaped): split at 南昌 (NAC), route each arm separately.
 """
 import json, math, re, sys, time, heapq
 import urllib.parse, urllib.request
@@ -23,7 +24,7 @@ def overpass_query(q, retries=4):
     for a in range(retries):
         try:
             data = urllib.parse.urlencode({"data": q}).encode()
-            req = urllib.request.Request(OVERPASS, data=data, headers={"User-Agent":"chaser-mtr/4.0"})
+            req = urllib.request.Request(OVERPASS, data=data, headers={"User-Agent":"chaser-mtr/6.0"})
             with urllib.request.urlopen(req, timeout=120) as r: return json.loads(r.read())
         except Exception as e:
             print(f"  attempt {a+1} failed: {e}", file=sys.stderr)
@@ -42,13 +43,12 @@ def fetch_line_ways(ref):
     ways = []
     for rel in [e for e in d.get("elements",[]) if e.get("type")=="relation"]:
         for m in rel.get("members",[]):
-            if m.get("type")!="way" or m.get("role") in ("platform","stop","station","entrance"): continue
+            if m.get("type")!="way" or m.get("role") in ("platform","stop","station","entrance","stop_position"): continue
             g = m.get("geometry")
             if g and len(g)>=2: ways.append([(p["lat"],p["lon"]) for p in g])
     return ways
 
 def build_graph(ways):
-    """Build adjacency graph. Nodes keyed by (lat,lng) rounded to 6dp."""
     def key(p): return (round(p[0],6), round(p[1],6))
     adj = defaultdict(set)
     coords = {}
@@ -86,6 +86,37 @@ def dijkstra(adj, coords, start, end):
         if cur is None: return None
     path.append(start); path.reverse()
     return path
+
+def route_stations(adj, coords, station_list, label=""):
+    """Route between consecutive stations, return full polyline coords."""
+    nodes = []
+    valid = []
+    for s in station_list:
+        n, off = nearest_node(s, coords)
+        if off > 2000:
+            print(f"  ⚠️ {label}{s['code']} ({s['name_tc']}) {off:.0f}m from graph — skipped")
+        else:
+            nodes.append(n); valid.append(s)
+    if len(valid) < 2: return [], valid
+
+    full_coords = []
+    for i in range(len(nodes)-1):
+        seg = dijkstra(adj, coords, nodes[i], nodes[i+1])
+        straight = dist_m(coords[nodes[i]], coords[nodes[i+1]])
+        if seg is None:
+            print(f"  ⚠️ {label}no path {valid[i]['code']}→{valid[i+1]['code']}, straight line")
+            seg_coords = [coords[nodes[i]], coords[nodes[i+1]]]
+        else:
+            seg_coords = [coords[k] for k in seg]
+            seg_len = sum(dist_m(seg_coords[j], seg_coords[j+1]) for j in range(len(seg_coords)-1))
+            if straight > 100 and seg_len > straight * 3:
+                print(f"  ⚠️ {label}{valid[i]['code']}→{valid[i+1]['code']} detour ({seg_len:.0f}m vs {straight:.0f}m) — straight line")
+                seg_coords = [coords[nodes[i]], coords[nodes[i+1]]]
+        if not full_coords:
+            full_coords.extend(seg_coords)
+        else:
+            full_coords.extend(seg_coords[1:])
+    return full_coords, valid
 
 def douglas_peucker(pts, eps_m):
     if len(pts) < 3: return pts
@@ -141,47 +172,37 @@ def main():
         line_stations = [s for s in stations if s["line"]==code]
         if code=="EAL": line_stations = [s for s in line_stations if s["code"]!="RAC"]
 
-        # Find nearest graph node for each station
-        nodes = []
-        valid = []
-        for s in line_stations:
-            n, off = nearest_node(s, coords)
-            if off > 2000:
-                print(f"  ⚠️ {s['code']} ({s['name_tc']}) {off:.0f}m from graph — skipped")
+        if code == "TML":
+            # TML is U-shaped: split at 南昌 (NAC), route each arm separately
+            nac_idx = next((i for i, s in enumerate(line_stations) if s["code"]=="NAC"), None)
+            if nac_idx is not None:
+                arm1 = line_stations[:nac_idx+1]  # TIS → NAC
+                arm2 = line_stations[nac_idx:]     # NAC → WKS
+                print(f"  TML split: arm1={len(arm1)} stations, arm2={len(arm2)} stations")
+                coords1, _ = route_stations(adj, coords, arm1, "arm1 ")
+                coords2, _ = route_stations(adj, coords, arm2, "arm2 ")
+                full_coords = coords1 + coords2[1:] if coords1 and coords2 else coords1 or coords2
             else:
-                nodes.append(n); valid.append(s)
+                full_coords, _ = route_stations(adj, coords, line_stations)
+        else:
+            full_coords, _ = route_stations(adj, coords, line_stations)
 
-        if len(valid) < 2:
-            print("  ⚠️ too few stations"); continue
-
-        # Route between consecutive valid stations
-        full_coords = []
-        for i in range(len(nodes)-1):
-            seg = dijkstra(adj, coords, nodes[i], nodes[i+1])
-            straight = dist_m(coords[nodes[i]], coords[nodes[i+1]])
-            if seg is None:
-                print(f"  ⚠️ no path {valid[i]['code']}→{valid[i+1]['code']}, straight line")
-                seg_coords = [coords[nodes[i]], coords[nodes[i+1]]]
-            else:
-                seg_coords = [coords[k] for k in seg]
-                seg_len = sum(dist_m(seg_coords[j], seg_coords[j+1]) for j in range(len(seg_coords)-1))
-                # Branch detour: path much longer than straight line → skip
-                if straight > 100 and seg_len > straight * 3:
-                    print(f"  ⚠️ {valid[i]['code']}→{valid[i+1]['code']} detour ({seg_len:.0f}m vs {straight:.0f}m) — straight line")
-                    seg_coords = [coords[nodes[i]], coords[nodes[i+1]]]
-            if not full_coords:
-                full_coords.extend(seg_coords)
-            else:
-                full_coords.extend(seg_coords[1:])  # skip duplicate junction
+        if len(full_coords) < 2:
+            print("  ⚠️ routing failed"); continue
 
         print(f"  routed: {len(full_coords)} pts")
         simplified = douglas_peucker(full_coords, 40)
         print(f"  simplified: {len(simplified)} pts")
 
+        # Check for jumps
+        jumps = sum(1 for i in range(1, len(simplified)) if dist_m(simplified[i-1], simplified[i]) > 2000)
+        if jumps > 0: print(f"  ⚠️ {jumps} jumps >2km")
+
         cum = [0.0]
         for i in range(len(simplified)-1): cum.append(cum[-1]+dist_m(simplified[i],simplified[i+1]))
+        print(f"  total: {cum[-1]/1000:.1f}km")
 
-        # Project ALL line stations (including skipped ones) onto the polyline
+        # Project ALL line stations
         st = {}
         for s in line_stations:
             along, off = project_station(s, simplified, cum)
@@ -190,16 +211,19 @@ def main():
                 continue
             st[s["code"]] = round(along)
 
+        vals = list(st.values())
+        mono = all(vals[i] <= vals[i+1] for i in range(len(vals)-1))
+        print(f"  ✅ {len(simplified)} pts, {len(st)} stations, monotonic={'✅' if mono else '❌'}")
+
         out[code] = {"points":[[round(p[0],5),round(p[1],5)] for p in simplified], "stations":st}
-        print(f"  ✅ {len(simplified)} pts, {len(st)} stations")
         time.sleep(3)
 
     ts_out = "/home/blackpi/chaser/src/lib/mtr-geometry.ts"
     with open(ts_out, "w") as f:
         f.write("// Auto-generated MTR track geometry from OpenStreetMap (Overpass API).\n")
         f.write("// points: [lat, lng][] along the line; stations: stationCode -> along-route metres.\n")
-        f.write("// Built by Dijkstra-routing between consecutive stations through the OSM way-graph.\n")
-        f.write("// Simplified with Douglas-Peucker (40m). Do not edit by hand.\n\n")
+        f.write("// Dijkstra routing between consecutive stations + branch detour detection.\n")
+        f.write("// TML split at NAC (U-shaped line). Simplified with Douglas-Peucker (40m).\n\n")
         f.write("export interface MTRLineGeometry {\n  points: [number, number][];\n  stations: Record<string, number>;\n}\n\n")
         f.write("export const MTR_GEOMETRY: Record<string, MTRLineGeometry> = ")
         json.dump(out, f, separators=(",",":"), ensure_ascii=False)
