@@ -16,9 +16,10 @@ last_update_by: HermesBPi
 3. Douglas-Peucker 簡化（40m）
 4. `getMTRTrackPath()` 按 along-distance 切兩站之間嘅軌道
 5. TrackingView 優先用真實軌道，fallback 去站點直線
-6. **已移除 TML/SIL**：TML 係 U 形線，Dijkstra 產生回頭路（9 jumps、non-monotonic）；SIL OSM 圖斷開只有 5 pts
-7. 現有幾何：TWL/KTL/ISL/TKL/EAL/AEL/DRL（7 條線）
-8. `scripts/fetch-mtr-geometry.py` 可重跑更新數據
+6. **TML 修復**：改用 `way["ref"="TML"]` 直接 query（唔靠 relation），避免 branch 雜質。24/27 站有真實軌道（屯門/兆康 OSM 缺數據），60.4km
+7. SIL 移除（OSM 圖斷開只有 5 pts）
+8. 現有幾何：TWL/KTL/ISL/TKL/EAL/AEL/DRL/TML（8 條線）
+9. `scripts/fetch-mtr-geometry.py` + `scripts/fetch-tml-geometry.py` 可重跑更新數據
 
 ### 2026-07-31 | MTR 上車後 GPS match 唔到 → 錯誤顯示步行時間
 **App** `journey-progress.ts` + `TrackingView.tsx`
